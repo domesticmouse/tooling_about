@@ -36,12 +36,12 @@ class AntigravityService extends ChangeNotifier {
   final ValueNotifier<int> _logNotifier = ValueNotifier<int>(0);
   StreamSubscription<LogRecord>? _logSubscription;
 
-  AntigravityService({this.prefs}) {
+  AntigravityService({this.prefs, String? environmentApiKey}) {
     // Enable fine-grained logging across the Dart logging hierarchy
     Logger.root.level = Level.ALL;
     _logSubscription = Logger.root.onRecord.listen(_handleLogRecord);
 
-    _initSettings();
+    _initSettings(environmentApiKey: environmentApiKey);
 
     addLog(
       'Service initialized. Antigravity logging enabled at Level.ALL.',
@@ -49,7 +49,7 @@ class AntigravityService extends ChangeNotifier {
     );
   }
 
-  void _initSettings() {
+  void _initSettings({String? environmentApiKey}) {
     // 1. Model
     final savedModel = prefs?.getString(prefKeyModel);
     if (savedModel != null && savedModel.isNotEmpty) {
@@ -63,12 +63,16 @@ class AntigravityService extends ChangeNotifier {
     }
 
     // 3. Environment API Key
-    try {
-      final envKey = Platform.environment['GEMINI_API_KEY'];
-      if (envKey != null && envKey.trim().isNotEmpty) {
-        _environmentApiKey = envKey.trim();
-      }
-    } catch (_) {}
+    if (environmentApiKey != null && environmentApiKey.trim().isNotEmpty) {
+      _environmentApiKey = environmentApiKey.trim();
+    } else {
+      try {
+        final envKey = Platform.environment['GEMINI_API_KEY'];
+        if (envKey != null && envKey.trim().isNotEmpty) {
+          _environmentApiKey = envKey.trim();
+        }
+      } catch (_) {}
+    }
 
     // 4. Manually entered API Key from preferences
     final savedApiKey = prefs?.getString(prefKeyApiKey);
@@ -116,7 +120,7 @@ class AntigravityService extends ChangeNotifier {
       direction = LogDirection.system;
     }
 
-    _addLogEntry(
+    addLogEntry(
       ProcessLogEntry(
         id: '${DateTime.now().microsecondsSinceEpoch}_${_processLogs.length}',
         timestamp: record.time,
@@ -129,7 +133,7 @@ class AntigravityService extends ChangeNotifier {
   }
 
   void addLog(String message, {required LogDirection direction}) {
-    _addLogEntry(
+    addLogEntry(
       ProcessLogEntry(
         id: '${DateTime.now().microsecondsSinceEpoch}_${_processLogs.length}',
         timestamp: DateTime.now(),
@@ -141,7 +145,7 @@ class AntigravityService extends ChangeNotifier {
     );
   }
 
-  void _addLogEntry(ProcessLogEntry entry) {
+  void addLogEntry(ProcessLogEntry entry) {
     _processLogs.add(entry);
     // Keep max 1500 log entries to manage memory with O(1) removals
     if (_processLogs.length > 1500) {

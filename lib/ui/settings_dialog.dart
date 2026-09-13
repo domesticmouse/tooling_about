@@ -99,8 +99,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 },
               ),
               const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                runSpacing: 4,
                 children: [
                   Text('Gemini API Key', style: theme.textTheme.labelLarge),
                   if (widget.service.isUsingEnvironmentApiKey)

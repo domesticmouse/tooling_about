@@ -14,8 +14,9 @@ import 'settings_dialog.dart';
 /// Main interactive chat screen for Antigravity.
 class ChatScreen extends StatefulWidget {
   final AntigravityService service;
+  final List<ChatMessage>? initialMessages;
 
-  const ChatScreen({super.key, required this.service});
+  const ChatScreen({super.key, required this.service, this.initialMessages});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -24,7 +25,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen>
     with SingleTickerProviderStateMixin {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  final List<ChatMessage> _messages = [];
+  late final List<ChatMessage> _messages;
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
@@ -36,6 +37,9 @@ class _ChatScreenState extends State<ChatScreen>
   @override
   void initState() {
     super.initState();
+    _messages = widget.initialMessages != null
+        ? List<ChatMessage>.from(widget.initialMessages!)
+        : <ChatMessage>[];
     _scrollTicker = createTicker(_onScrollTick);
     widget.service.addListener(_onServiceChanged);
   }

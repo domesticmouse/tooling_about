@@ -129,8 +129,12 @@ class YamlHighlighter {
             }
           }
         } else if (item is List) {
-          buffer.writeln();
-          buffer.write(_toYaml(item, indent: indent + 1));
+          if (item.isEmpty) {
+            buffer.write(' []');
+          } else {
+            buffer.writeln();
+            buffer.write(_toYaml(item, indent: indent + 1));
+          }
         } else {
           buffer.write(' ${_formatScalar(item)}');
         }
