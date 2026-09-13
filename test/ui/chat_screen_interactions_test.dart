@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:genui/genui.dart' hide ChatMessage;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tooling_about/models/chat_message.dart';
 import 'package:tooling_about/services/antigravity_service.dart';
@@ -175,5 +176,68 @@ void main() {
       expect(find.text('Generating...'), findsOneWidget);
       expect(find.text('Connection interrupted by host'), findsOneWidget);
     });
+
+    testWidgets(
+      'renders GenUI Surface inside assistant message bubble when surfaceIds present',
+      (tester) async {
+        final service = AntigravityService(prefs: prefs);
+
+        // Feed A2UI streaming chunks through GenUI transport adapter
+        final transport =
+            service.conversation.transport as A2uiTransportAdapter;
+        transport.addChunk('''
+```json
+{
+  "version": "v0.9",
+  "createSurface": {
+    "surfaceId": "test_surf",
+    "catalogId": "$basicCatalogId",
+    "sendDataModel": true
+  }
+}
+```
+''');
+        transport.addChunk('''
+```json
+{
+  "version": "v0.9",
+  "updateComponents": {
+    "surfaceId": "test_surf",
+    "components": [
+      {
+        "id": "root",
+        "component": "Text",
+        "text": "Hello from GenUI surface!"
+      }
+    ]
+  }
+}
+```
+''');
+        // Allow microtasks for stream parsing
+        await tester.pump(const Duration(milliseconds: 50));
+
+        await tester.pumpWidget(
+          buildChatApp(
+            service: service,
+            initialMessages: [
+              ChatMessage(
+                id: 'genui-bot-1',
+                role: MessageRole.assistant,
+                content: 'Here is your interactive UI:',
+                surfaceIds: ['test_surf'],
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(Surface), findsOneWidget);
+        expect(find.text('Here is your interactive UI:'), findsOneWidget);
+        expect(find.text('Hello from GenUI surface!'), findsOneWidget);
+
+        service.dispose();
+      },
+    );
   });
 }

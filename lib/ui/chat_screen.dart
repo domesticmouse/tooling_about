@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:genui/genui.dart' hide ChatMessage;
 
 import '../models/chat_message.dart';
 import '../services/antigravity_service.dart';
@@ -42,16 +43,23 @@ class _ChatScreenState extends State<ChatScreen>
         : <ChatMessage>[];
     _scrollTicker = createTicker(_onScrollTick);
     widget.service.addListener(_onServiceChanged);
+    widget.service.onUiActionSubmitted = _onUiActionSubmitted;
   }
 
   @override
   void dispose() {
+    widget.service.onUiActionSubmitted = null;
     widget.service.removeListener(_onServiceChanged);
     _scrollTicker.dispose();
     _textController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _onUiActionSubmitted(String actionPrompt) {
+    if (!mounted || widget.service.isGenerating) return;
+    _sendMessage(actionPrompt);
   }
 
   void _onServiceChanged() {
@@ -149,6 +157,15 @@ class _ChatScreenState extends State<ChatScreen>
 
     await widget.service.sendMessage(
       prompt: text,
+      onSurfaceAdded: (surfaceId) {
+        if (!mounted) return;
+        setState(() {
+          if (!botMsg.surfaceIds.contains(surfaceId)) {
+            botMsg.surfaceIds.add(surfaceId);
+          }
+        });
+        _requestScrollFollow();
+      },
       onToken: (token) {
         if (!mounted) return;
         setState(() {
@@ -322,7 +339,10 @@ class _ChatScreenState extends State<ChatScreen>
                           itemCount: _messages.length,
                           itemBuilder: (context, index) {
                             final message = _messages[index];
-                            return _MessageBubble(message: message);
+                            return _MessageBubble(
+                              message: message,
+                              service: widget.service,
+                            );
                           },
                         ),
                       ),
@@ -418,6 +438,13 @@ class _ChatScreenState extends State<ChatScreen>
                 runSpacing: 8,
                 alignment: WrapAlignment.center,
                 children: [
+                  ActionChip(
+                    avatar: const Icon(Icons.widgets_outlined, size: 16),
+                    label: const Text('Interactive form (GenUI)'),
+                    onPressed: () => _sendMessage(
+                      'Create an interactive user feedback form with a text field and submit button using GenUI',
+                    ),
+                  ),
                   ActionChip(
                     avatar: const Icon(Icons.code, size: 16),
                     label: const Text('Write a Flutter widget'),
@@ -522,8 +549,9 @@ class _ChatScreenState extends State<ChatScreen>
 
 class _MessageBubble extends StatefulWidget {
   final ChatMessage message;
+  final AntigravityService? service;
 
-  const _MessageBubble({required this.message});
+  const _MessageBubble({required this.message, this.service});
 
   @override
   State<_MessageBubble> createState() => _MessageBubbleState();
@@ -679,67 +707,110 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   ],
 
                   // Main message content
-                  if (widget.message.content.isNotEmpty)
-                    isUser
-                        ? SelectableText(
-                            widget.message.content,
-                            style: TextStyle(
-                              color: colorScheme.onPrimary,
-                              fontSize: 14,
-                            ),
-                          )
-                        : MarkdownBody(
-                            data: widget.message.content,
-                            selectable: true,
-                            styleSheet: MarkdownStyleSheet.fromTheme(theme)
-                                .copyWith(
-                                  p: TextStyle(
-                                    fontSize: 14,
-                                    color: colorScheme.onSurface,
-                                  ),
-                                  code: TextStyle(
-                                    backgroundColor: colorScheme
-                                        .surfaceContainerHighest
-                                        .withValues(alpha: 0.7),
-                                    fontFamily: 'monospace',
-                                    fontSize: 13,
-                                  ),
-                                  codeblockDecoration: BoxDecoration(
-                                    color: colorScheme.surfaceContainerHighest
-                                        .withValues(alpha: 0.6),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: colorScheme.outlineVariant
-                                          .withValues(alpha: 0.4),
-                                    ),
-                                  ),
+                  Builder(
+                    builder: (context) {
+                      final displayContent = widget.message.displayContent;
+                      if (displayContent.isNotEmpty) {
+                        return isUser
+                            ? SelectableText(
+                                displayContent,
+                                style: TextStyle(
+                                  color: colorScheme.onPrimary,
+                                  fontSize: 14,
                                 ),
-                          )
-                  else if (widget.message.isStreaming)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: colorScheme.primary,
+                              )
+                            : MarkdownBody(
+                                data: displayContent,
+                                selectable: true,
+                                styleSheet: MarkdownStyleSheet.fromTheme(theme)
+                                    .copyWith(
+                                      p: TextStyle(
+                                        fontSize: 14,
+                                        color: colorScheme.onSurface,
+                                      ),
+                                      code: TextStyle(
+                                        backgroundColor: colorScheme
+                                            .surfaceContainerHighest
+                                            .withValues(alpha: 0.7),
+                                        fontFamily: 'monospace',
+                                        fontSize: 13,
+                                      ),
+                                      codeblockDecoration: BoxDecoration(
+                                        color: colorScheme
+                                            .surfaceContainerHighest
+                                            .withValues(alpha: 0.6),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: colorScheme.outlineVariant
+                                              .withValues(alpha: 0.4),
+                                        ),
+                                      ),
+                                    ),
+                              );
+                      } else if (widget.message.isStreaming &&
+                          !widget.message.hasSurfaces) {
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              widget.message.isThinking
+                                  ? 'Thinking...'
+                                  : 'Generating...',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontStyle: FontStyle.italic,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+
+                  // Dynamic GenUI Surfaces
+                  if (widget.message.hasSurfaces && widget.service != null) ...[
+                    const SizedBox(height: 10),
+                    ...widget.message.surfaceIds.map((surfaceId) {
+                      return Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: colorScheme.outlineVariant.withValues(
+                              alpha: 0.5,
+                            ),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Surface(
+                            surfaceContext: widget.service!.surfaceController
+                                .contextFor(surfaceId),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          widget.message.isThinking
-                              ? 'Thinking...'
-                              : 'Generating...',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontStyle: FontStyle.italic,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
+                      );
+                    }),
+                  ],
 
                   // Error alert if message failed
                   if (widget.message.error != null) ...[

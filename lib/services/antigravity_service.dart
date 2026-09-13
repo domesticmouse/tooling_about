@@ -2,15 +2,18 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 
-import 'package:antigravity/antigravity.dart';
+import 'package:antigravity/antigravity.dart' hide Conversation;
 import 'package:flutter/foundation.dart';
+import 'package:genui/genui.dart' hide ChatMessage;
+import 'package:genui/genui.dart' as genui show ChatMessage;
 import 'package:logging/logging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/process_log_entry.dart';
 
-/// Service managing the lifecycle of the Google Antigravity [Agent]
-/// and capturing a trace of all subprocess communication.
+/// Service managing the lifecycle of the Google Antigravity [Agent],
+/// generative UI via [Conversation] / [SurfaceController], and capturing a trace
+/// of all subprocess communication.
 class AntigravityService extends ChangeNotifier {
   static const String prefKeyApiKey = 'antigravity_api_key';
   static const String prefKeyModel = 'antigravity_model';
@@ -36,15 +39,26 @@ class AntigravityService extends ChangeNotifier {
   final ValueNotifier<int> _logNotifier = ValueNotifier<int>(0);
   StreamSubscription<LogRecord>? _logSubscription;
 
+  // GenUI components
+  late Catalog _catalog;
+  late SurfaceController _surfaceController;
+  late A2uiTransportAdapter _transport;
+  late Conversation _conversation;
+  StreamSubscription<ConversationEvent>? _conversationSubscription;
+
+  void Function(String surfaceId)? _activeSurfaceCallback;
+  void Function(String actionPrompt)? onUiActionSubmitted;
+
   AntigravityService({this.prefs, String? environmentApiKey}) {
     // Enable fine-grained logging across the Dart logging hierarchy
     Logger.root.level = Level.ALL;
     _logSubscription = Logger.root.onRecord.listen(_handleLogRecord);
 
     _initSettings(environmentApiKey: environmentApiKey);
+    _initGenUi();
 
     addLog(
-      'Service initialized. Antigravity logging enabled at Level.ALL.',
+      'Service initialized with GenUI support. Antigravity logging enabled at Level.ALL.',
       direction: LogDirection.system,
     );
   }
@@ -96,6 +110,89 @@ class AntigravityService extends ChangeNotifier {
   ValueListenable<int> get logNotifier => _logNotifier;
 
   bool get hasApiKey => apiKey != null && apiKey!.trim().isNotEmpty;
+
+  SurfaceController get surfaceController => _surfaceController;
+  Conversation get conversation => _conversation;
+  Catalog get catalog => _catalog;
+
+  static final String _genUiSystemInstructions = PromptBuilder.chat(
+    catalog: BasicCatalogItems.asCatalog(),
+  ).systemPromptJoined();
+
+  String get effectiveSystemInstructions =>
+      '$_systemInstructions\n\n$_genUiSystemInstructions';
+
+  void _initGenUi() {
+    _catalog = BasicCatalogItems.asCatalog();
+    _surfaceController = SurfaceController(catalogs: [_catalog]);
+    _transport = A2uiTransportAdapter(onSend: _handleTransportSend);
+    _conversation = Conversation(
+      controller: _surfaceController,
+      transport: _transport,
+    );
+
+    _conversationSubscription = _conversation.events.listen(
+      _handleConversationEvent,
+    );
+  }
+
+  void _handleConversationEvent(ConversationEvent event) {
+    switch (event) {
+      case ConversationSurfaceAdded(:final surfaceId):
+        addLog(
+          '<<< GenUI Surface created: $surfaceId',
+          direction: LogDirection.inbound,
+        );
+        _activeSurfaceCallback?.call(surfaceId);
+        notifyListeners();
+      case ConversationComponentsUpdated(:final surfaceId):
+        addLog(
+          '<<< GenUI Surface components updated: $surfaceId',
+          direction: LogDirection.inbound,
+        );
+        notifyListeners();
+      case ConversationSurfaceRemoved(:final surfaceId):
+        addLog(
+          '<<< GenUI Surface removed: $surfaceId',
+          direction: LogDirection.system,
+        );
+        notifyListeners();
+      case ConversationError(:final error):
+        addLog('GenUI error: $error', direction: LogDirection.error);
+      default:
+        break;
+    }
+  }
+
+  Future<void> _handleTransportSend(genui.ChatMessage message) async {
+    String text = message.text;
+    if (text.isEmpty) {
+      final uiParts = message.parts
+          .map((p) {
+            final ui = p.asUiInteractionPart;
+            return ui != null ? ui.interaction : p.toString();
+          })
+          .where((s) => s.isNotEmpty);
+      text = uiParts.join('\n');
+    }
+
+    addLog(
+      '>>> GenUI action submitted: "$text"',
+      direction: LogDirection.outbound,
+    );
+
+    if (onUiActionSubmitted != null) {
+      onUiActionSubmitted!(text);
+    }
+  }
+
+  void _resetGenUi() {
+    _conversationSubscription?.cancel();
+    _conversation.dispose();
+    _transport.dispose();
+    _surfaceController.dispose();
+    _initGenUi();
+  }
 
   void _handleLogRecord(LogRecord record) {
     final msg = record.message;
@@ -227,7 +324,7 @@ class AntigravityService extends ChangeNotifier {
       final config = LocalAgentConfig(
         apiKey: apiKey,
         model: _model,
-        systemInstructions: _systemInstructions,
+        systemInstructions: effectiveSystemInstructions,
         policies: [allowAll()],
         debugConfig: DebugConfig(
           level: Level.ALL,
@@ -285,16 +382,19 @@ class AntigravityService extends ChangeNotifier {
   Future<void> clearSession() async {
     addLog('Clearing conversation session.', direction: LogDirection.system);
     await cancelGeneration();
+    _resetGenUi();
     await restartAgent();
   }
 
-  /// Sends a user message to the agent and streams back thoughts and text chunks.
+  /// Sends a user message to the agent and streams back thoughts and text chunks,
+  /// forwarding text tokens to GenUI's transport adapter.
   Future<void> sendMessage({
     required String prompt,
     required void Function(String token) onToken,
     required void Function(String thought) onThought,
     required void Function(String error) onError,
     required VoidCallback onDone,
+    void Function(String surfaceId)? onSurfaceAdded,
   }) async {
     if (_isGenerating) return;
 
@@ -307,6 +407,7 @@ class AntigravityService extends ChangeNotifier {
       }
     }
 
+    _activeSurfaceCallback = onSurfaceAdded;
     _isGenerating = true;
     addLog(
       '>>> Sending prompt to Antigravity: "$prompt"',
@@ -334,9 +435,10 @@ class AntigravityService extends ChangeNotifier {
         },
       );
 
-      // Stream text tokens
+      // Stream text tokens and feed to GenUI transport adapter
       textSub = response.textStream.listen(
         (token) {
+          _transport.addChunk(token);
           onToken(token);
         },
         onError: (err) {
@@ -345,6 +447,7 @@ class AntigravityService extends ChangeNotifier {
           }
         },
         onDone: () {
+          _transport.addChunk('\n\n');
           if (!completer.isCompleted) {
             completer.complete();
           }
@@ -368,6 +471,7 @@ class AntigravityService extends ChangeNotifier {
         _generationCompleter!.complete();
       }
       _generationCompleter = null;
+      _activeSurfaceCallback = null;
       await thoughtSub?.cancel();
       await textSub?.cancel();
       _activeResponse = null;
@@ -389,6 +493,10 @@ class AntigravityService extends ChangeNotifier {
     _activeResponse?.cancel();
     _agent?.stop();
     _logNotifier.dispose();
+    _conversationSubscription?.cancel();
+    _conversation.dispose();
+    _transport.dispose();
+    _surfaceController.dispose();
     super.dispose();
   }
 }

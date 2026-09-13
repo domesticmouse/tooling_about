@@ -76,6 +76,56 @@ void main() {
         expect(msg.hasThoughts, isTrue);
       },
     );
+
+    test('surfaceIds and hasSurfaces behave correctly', () {
+      final msg = ChatMessage(id: '1', role: MessageRole.assistant);
+      expect(msg.surfaceIds, isEmpty);
+      expect(msg.hasSurfaces, isFalse);
+
+      final msgWithSurfaces = ChatMessage(
+        id: '2',
+        role: MessageRole.assistant,
+        surfaceIds: ['surface_a', 'surface_b'],
+      );
+      expect(msgWithSurfaces.hasSurfaces, isTrue);
+      expect(msgWithSurfaces.surfaceIds, ['surface_a', 'surface_b']);
+    });
+
+    test('displayContent cleans A2UI protocol json blocks when hasSurfaces is true', () {
+      final textWithA2ui = '''
+Here is the interactive form:
+```json
+{
+  "version": "v0.9",
+  "createSurface": {
+    "surfaceId": "surf_1",
+    "catalogId": "basic",
+    "sendDataModel": true
+  }
+}
+```
+Feel free to submit!
+''';
+      final msgWithoutSurfaces = ChatMessage(
+        id: '1',
+        role: MessageRole.assistant,
+        content: textWithA2ui,
+      );
+      // When hasSurfaces is false, content is returned as-is
+      expect(msgWithoutSurfaces.displayContent, textWithA2ui);
+
+      final msgWithSurfaces = ChatMessage(
+        id: '2',
+        role: MessageRole.assistant,
+        content: textWithA2ui,
+        surfaceIds: ['surf_1'],
+      );
+      // When hasSurfaces is true, the A2UI json block is stripped
+      expect(
+        msgWithSurfaces.displayContent,
+        'Here is the interactive form:\n\nFeel free to submit!',
+      );
+    });
   });
 
   group('ProcessLogEntry', () {

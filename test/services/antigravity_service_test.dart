@@ -124,5 +124,17 @@ void main() {
       );
       expect(envKeyService.hasApiKey, isTrue);
     });
+
+    test('initializes and provides GenUI controller, conversation, and instructions', () {
+      final service = AntigravityService(prefs: prefs);
+
+      expect(service.surfaceController, isNotNull);
+      expect(service.conversation, isNotNull);
+      expect(service.catalog, isNotNull);
+      expect(service.effectiveSystemInstructions, contains('A2UI'));
+      expect(service.effectiveSystemInstructions, contains('v0.9'));
+
+      service.dispose();
+    });
   });
 }
