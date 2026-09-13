@@ -4,6 +4,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
 import '../models/chat_message.dart';
 import '../services/antigravity_service.dart';
+import 'process_log_panel.dart';
 import 'settings_dialog.dart';
 
 /// Main interactive chat screen for Antigravity.
@@ -21,6 +22,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
+  bool _showLogPanel = true;
 
   @override
   void initState() {
@@ -165,6 +167,15 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: _showLogPanel
+                ? 'Hide subprocess trace'
+                : 'Show subprocess trace',
+            icon: Icon(
+              _showLogPanel ? Icons.terminal : Icons.terminal_outlined,
+            ),
+            onPressed: () => setState(() => _showLogPanel = !_showLogPanel),
+          ),
+          IconButton(
             tooltip: 'Clear conversation',
             icon: const Icon(Icons.delete_outline),
             onPressed: _messages.isEmpty ? null : _clearChat,
@@ -177,27 +188,41 @@ class _ChatScreenState extends State<ChatScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Column(
+      body: Row(
         children: [
-          if (widget.service.lastError != null && _messages.isEmpty)
-            _buildErrorBanner(widget.service.lastError!),
           Expanded(
-            child: _messages.isEmpty
-                ? _buildEmptyState(colorScheme)
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 16,
-                    ),
-                    itemCount: _messages.length,
-                    itemBuilder: (context, index) {
-                      final message = _messages[index];
-                      return _MessageBubble(message: message);
-                    },
-                  ),
+            child: Column(
+              children: [
+                if (widget.service.lastError != null && _messages.isEmpty)
+                  _buildErrorBanner(widget.service.lastError!),
+                Expanded(
+                  child: _messages.isEmpty
+                      ? _buildEmptyState(colorScheme)
+                      : ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 16,
+                          ),
+                          itemCount: _messages.length,
+                          itemBuilder: (context, index) {
+                            final message = _messages[index];
+                            return _MessageBubble(message: message);
+                          },
+                        ),
+                ),
+                _buildInputBar(colorScheme),
+              ],
+            ),
           ),
-          _buildInputBar(colorScheme),
+          if (_showLogPanel)
+            SizedBox(
+              width: 420,
+              child: ProcessLogPanel(
+                service: widget.service,
+                onClose: () => setState(() => _showLogPanel = false),
+              ),
+            ),
         ],
       ),
     );

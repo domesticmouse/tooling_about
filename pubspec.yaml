@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   antigravity: ^0.13.0
   flutter_markdown_plus: ^1.0.12
+  logging: ^1.3.0
 
 dev_dependencies:
   flutter_test:

@@ -3,8 +3,12 @@ import 'dart:io';
 
 import 'package:antigravity/antigravity.dart';
 import 'package:flutter/foundation.dart';
+import 'package:logging/logging.dart';
 
-/// Service managing the lifecycle of the Google Antigravity [Agent].
+import '../models/process_log_entry.dart';
+
+/// Service managing the lifecycle of the Google Antigravity [Agent]
+/// and capturing a trace of all subprocess communication.
 class AntigravityService extends ChangeNotifier {
   Agent? _agent;
   ChatResponse? _activeResponse;
@@ -18,7 +22,14 @@ class AntigravityService extends ChangeNotifier {
   bool _isGenerating = false;
   String? _lastError;
 
+  final List<ProcessLogEntry> _processLogs = [];
+  StreamSubscription<LogRecord>? _logSubscription;
+
   AntigravityService() {
+    // Enable fine-grained logging across the Dart logging hierarchy
+    Logger.root.level = Level.ALL;
+    _logSubscription = Logger.root.onRecord.listen(_handleLogRecord);
+
     // Attempt to load API key from environment variable if available.
     try {
       final envKey = Platform.environment['GEMINI_API_KEY'];
@@ -26,6 +37,11 @@ class AntigravityService extends ChangeNotifier {
         _apiKey = envKey;
       }
     } catch (_) {}
+
+    addLog(
+      'Service initialized. Antigravity logging enabled at Level.ALL.',
+      direction: LogDirection.system,
+    );
   }
 
   String get model => _model;
@@ -35,8 +51,71 @@ class AntigravityService extends ChangeNotifier {
   bool get isGenerating => _isGenerating;
   bool get isReady => _agent != null && !_isInitializing;
   String? get lastError => _lastError;
+  List<ProcessLogEntry> get processLogs => List.unmodifiable(_processLogs);
 
   bool get hasApiKey => _apiKey != null && _apiKey!.trim().isNotEmpty;
+
+  void _handleLogRecord(LogRecord record) {
+    final msg = record.message;
+    LogDirection direction;
+
+    if (msg.startsWith('>>>') ||
+        msg.contains('Sending user_input') ||
+        msg.contains('Sending tool_response') ||
+        msg.contains('Sending halt_request') ||
+        msg.contains('Sending automated_trigger')) {
+      direction = LogDirection.outbound;
+    } else if (msg.startsWith('<<<') ||
+        msg.contains('Received WebSocket message') ||
+        msg.contains('Tool call requested') ||
+        msg.contains('Trajectory state updated')) {
+      direction = LogDirection.inbound;
+    } else if (record.level >= Level.WARNING ||
+        msg.contains('[Harness Stderr]') ||
+        record.level == Level.SEVERE) {
+      direction = LogDirection.error;
+    } else {
+      direction = LogDirection.system;
+    }
+
+    _addLogEntry(
+      ProcessLogEntry(
+        id: '${DateTime.now().microsecondsSinceEpoch}_${_processLogs.length}',
+        timestamp: record.time,
+        message: msg,
+        direction: direction,
+        level: record.level.name,
+        loggerName: record.loggerName,
+      ),
+    );
+  }
+
+  void addLog(String message, {required LogDirection direction}) {
+    _addLogEntry(
+      ProcessLogEntry(
+        id: '${DateTime.now().microsecondsSinceEpoch}_${_processLogs.length}',
+        timestamp: DateTime.now(),
+        message: message,
+        direction: direction,
+        level: 'INFO',
+        loggerName: 'app.service',
+      ),
+    );
+  }
+
+  void _addLogEntry(ProcessLogEntry entry) {
+    _processLogs.add(entry);
+    // Keep max 1500 log entries to manage memory
+    if (_processLogs.length > 1500) {
+      _processLogs.removeAt(0);
+    }
+    notifyListeners();
+  }
+
+  void clearLogs() {
+    _processLogs.clear();
+    notifyListeners();
+  }
 
   /// Updates settings and recreates the agent session if needed.
   Future<void> updateSettings({
@@ -75,12 +154,18 @@ class AntigravityService extends ChangeNotifier {
     _lastError = null;
     notifyListeners();
 
+    addLog(
+      'Restarting agent session (model: $_model)...',
+      direction: LogDirection.system,
+    );
+
     try {
       if (_agent != null) {
         try {
           await _agent!.stop();
+          addLog('Previous agent stopped.', direction: LogDirection.system);
         } catch (e) {
-          debugPrint('Error stopping previous agent: $e');
+          addLog('Error stopping agent: $e', direction: LogDirection.error);
         }
         _agent = null;
       }
@@ -90,18 +175,27 @@ class AntigravityService extends ChangeNotifier {
         model: _model,
         systemInstructions: _systemInstructions,
         policies: [allowAll()],
+        debugConfig: DebugConfig(
+          level: Level.ALL,
+          enableServerSideTracing: true,
+        ),
       );
 
       final agent = Agent(config);
       await agent.start();
       _agent = agent;
       _isInitializing = false;
+      addLog(
+        'Agent started successfully with model $_model.',
+        direction: LogDirection.system,
+      );
       notifyListeners();
       return true;
     } catch (e) {
       _isInitializing = false;
       _lastError = e.toString();
       _agent = null;
+      addLog('Failed to start agent: $e', direction: LogDirection.error);
       notifyListeners();
       return false;
     }
@@ -112,8 +206,12 @@ class AntigravityService extends ChangeNotifier {
     if (_activeResponse != null) {
       try {
         _activeResponse!.cancel();
+        addLog(
+          '>>> User requested cancellation of active response.',
+          direction: LogDirection.outbound,
+        );
       } catch (e) {
-        debugPrint('Error cancelling response: $e');
+        addLog('Error cancelling response: $e', direction: LogDirection.error);
       }
       _activeResponse = null;
       _isGenerating = false;
@@ -123,6 +221,7 @@ class AntigravityService extends ChangeNotifier {
 
   /// Clears the session and starts a clean conversation.
   Future<void> clearSession() async {
+    addLog('Clearing conversation session.', direction: LogDirection.system);
     await cancelGeneration();
     await restartAgent();
   }
@@ -147,6 +246,8 @@ class AntigravityService extends ChangeNotifier {
     }
 
     _isGenerating = true;
+    addLog('>>> Sending prompt to Antigravity: "$prompt"',
+        direction: LogDirection.outbound);
     notifyListeners();
 
     StreamSubscription<String>? thoughtSub;
@@ -164,7 +265,7 @@ class AntigravityService extends ChangeNotifier {
           onThought(thoughtChunk);
         },
         onError: (err) {
-          debugPrint('Thought stream error: $err');
+          addLog('Thought stream error: $err', direction: LogDirection.error);
         },
       );
 
@@ -186,10 +287,13 @@ class AntigravityService extends ChangeNotifier {
       );
 
       await completer.future;
+      addLog('<<< Response generation complete.',
+          direction: LogDirection.inbound);
     } catch (e) {
       if (e is AntigravityCancelledException) {
-        // Generation was cancelled gracefully by user
+        addLog('Generation was cancelled.', direction: LogDirection.system);
       } else {
+        addLog('Chat error: $e', direction: LogDirection.error);
         onError(e.toString());
       }
     } finally {
@@ -204,6 +308,7 @@ class AntigravityService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _logSubscription?.cancel();
     _activeResponse?.cancel();
     _agent?.stop();
     super.dispose();
