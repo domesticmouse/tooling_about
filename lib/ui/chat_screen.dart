@@ -201,6 +201,27 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  void _insertNewline() {
+    final text = _textController.text;
+    final selection = _textController.selection;
+    final start = selection.start;
+    final end = selection.end;
+
+    if (start >= 0 && end >= 0) {
+      final newText = text.replaceRange(start, end, '\n');
+      _textController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: start + 1),
+      );
+    } else {
+      final newText = '$text\n';
+      _textController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: newText.length),
+      );
+    }
+  }
+
   void _clearChat() {
     _stopScrollTicker();
     setState(() {
@@ -504,16 +525,32 @@ class _ChatScreenState extends State<ChatScreen>
                   const SingleActivator(LogicalKeyboardKey.enter): () {
                     _sendMessage();
                   },
+                  const SingleActivator(LogicalKeyboardKey.numpadEnter): () {
+                    _sendMessage();
+                  },
+                  const SingleActivator(
+                    LogicalKeyboardKey.enter,
+                    shift: true,
+                  ): () {
+                    _insertNewline();
+                  },
+                  const SingleActivator(
+                    LogicalKeyboardKey.numpadEnter,
+                    shift: true,
+                  ): () {
+                    _insertNewline();
+                  },
                 },
                 child: TextField(
                   controller: _textController,
                   focusNode: _focusNode,
+                  keyboardType: TextInputType.multiline,
                   maxLines: 5,
                   minLines: 1,
                   textInputAction: TextInputAction.send,
                   onSubmitted: (_) => _sendMessage(),
                   decoration: InputDecoration(
-                    hintText: 'Message Antigravity... (Enter to send)',
+                    hintText: 'Message Antigravity... (Enter to send, Shift+Enter for newline)',
                     filled: true,
                     fillColor: colorScheme.surfaceContainerHighest.withValues(
                       alpha: 0.5,

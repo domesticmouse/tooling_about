@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:genui/genui.dart' hide ChatMessage;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -237,6 +238,78 @@ void main() {
         expect(find.text('Hello from GenUI surface!'), findsOneWidget);
 
         service.dispose();
+      },
+    );
+
+    testWidgets(
+      'Shift+Enter inserts newline and plain Enter sends multiline message',
+      (tester) async {
+        final service = AntigravityService(prefs: prefs);
+
+        await tester.pumpWidget(buildChatApp(service: service));
+        await tester.pumpAndSettle();
+
+        final textFieldFinder = find.byType(TextField);
+        expect(textFieldFinder, findsOneWidget);
+
+        // Tap to focus and enter initial text
+        await tester.tap(textFieldFinder);
+        await tester.enterText(textFieldFinder, 'Line 1');
+        await tester.pump();
+
+        // Send Shift+Enter
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.pump();
+
+        // Verify text field now has a newline inserted
+        final textFieldWidget = tester.widget<TextField>(textFieldFinder);
+        expect(textFieldWidget.controller?.text, 'Line 1\n');
+
+        // Append line 2
+        await tester.enterText(textFieldFinder, 'Line 1\nLine 2');
+        await tester.pump();
+
+        // Plain Enter should send the message
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pump();
+
+        // The user message should be added to the chat
+        expect(find.text('Line 1\nLine 2'), findsOneWidget);
+        // And the text controller should be cleared
+        expect(textFieldWidget.controller?.text, '');
+      },
+    );
+
+    testWidgets(
+      'Shift+NumpadEnter inserts newline and plain NumpadEnter sends message',
+      (tester) async {
+        final service = AntigravityService(prefs: prefs);
+
+        await tester.pumpWidget(buildChatApp(service: service));
+        await tester.pumpAndSettle();
+
+        final textFieldFinder = find.byType(TextField);
+        await tester.tap(textFieldFinder);
+        await tester.enterText(textFieldFinder, 'Part A');
+        await tester.pump();
+
+        // Send Shift+NumpadEnter
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.numpadEnter);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.pump();
+
+        final textFieldWidget = tester.widget<TextField>(textFieldFinder);
+        expect(textFieldWidget.controller?.text, 'Part A\n');
+
+        // Plain NumpadEnter sends the message
+        await tester.sendKeyEvent(LogicalKeyboardKey.numpadEnter);
+        await tester.pump();
+
+        expect(find.text('Part A'), findsOneWidget);
+        expect(textFieldWidget.controller?.text, '');
       },
     );
   });
