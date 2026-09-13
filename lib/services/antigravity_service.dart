@@ -399,6 +399,21 @@ When asking the user a multiple-choice question, clarifying requirements, or off
     }
   }
 
+  /// Clears any active service-level error.
+  void clearError() {
+    if (_lastError != null) {
+      _lastError = null;
+      notifyListeners();
+    }
+  }
+
+  /// Helper for unit and widget tests to simulate a service error state.
+  @visibleForTesting
+  void setLastErrorForTesting(String? error) {
+    _lastError = error;
+    notifyListeners();
+  }
+
   /// Cancels any currently active response streaming.
   Future<void> cancelGeneration() async {
     if (_activeResponse != null || _isGenerating) {

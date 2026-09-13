@@ -311,7 +311,7 @@ class _ChatScreenState extends State<ChatScreen>
       ),
       body: Column(
         children: [
-          if (widget.service.lastError != null && _messages.isEmpty)
+          if (widget.service.lastError != null)
             _buildErrorBanner(widget.service.lastError!),
           Expanded(
             child: _messages.isEmpty
@@ -404,25 +404,53 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Widget _buildErrorBanner(String error) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Container(
       width: double.infinity,
-      color: Theme.of(context).colorScheme.errorContainer,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: colorScheme.errorContainer,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
           Icon(
             Icons.warning_amber_rounded,
-            color: Theme.of(context).colorScheme.onErrorContainer,
+            color: colorScheme.onErrorContainer,
+            size: 20,
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               error,
               style: TextStyle(
-                color: Theme.of(context).colorScheme.onErrorContainer,
+                color: colorScheme.onErrorContainer,
                 fontSize: 13,
               ),
             ),
+          ),
+          const SizedBox(width: 12),
+          FilledButton.tonalIcon(
+            style: FilledButton.styleFrom(
+              backgroundColor: colorScheme.onErrorContainer.withValues(
+                alpha: 0.15,
+              ),
+              foregroundColor: colorScheme.onErrorContainer,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              visualDensity: VisualDensity.compact,
+            ),
+            icon: const Icon(Icons.tune, size: 16),
+            label: const Text(
+              'Settings',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            onPressed: () => SettingsDialog.show(context, widget.service),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            tooltip: 'Dismiss',
+            icon: const Icon(Icons.close, size: 16),
+            color: colorScheme.onErrorContainer,
+            visualDensity: VisualDensity.compact,
+            onPressed: () => widget.service.clearError(),
           ),
         ],
       ),

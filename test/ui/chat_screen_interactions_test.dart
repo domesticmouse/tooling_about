@@ -312,5 +312,65 @@ void main() {
         expect(textFieldWidget.controller?.text, '');
       },
     );
+
+    testWidgets(
+      'error banner displays with Settings CTA and Dismiss button when lastError is set',
+      (tester) async {
+        final service = AntigravityService(prefs: prefs);
+        service.setLastErrorForTesting(
+          'Failed to connect to agent: invalid key',
+        );
+
+        await tester.pumpWidget(buildChatApp(service: service));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Failed to connect to agent: invalid key'),
+          findsOneWidget,
+        );
+        expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+        expect(find.text('Settings'), findsOneWidget);
+        expect(find.byTooltip('Dismiss'), findsOneWidget);
+      },
+    );
+
+    testWidgets('error banner Settings CTA opens SettingsDialog on tap', (
+      tester,
+    ) async {
+      final service = AntigravityService(prefs: prefs);
+      service.setLastErrorForTesting('Failed to initialize');
+
+      await tester.pumpWidget(buildChatApp(service: service));
+      await tester.pumpAndSettle();
+
+      final settingsCtaFinder = find.widgetWithText(FilledButton, 'Settings');
+      expect(settingsCtaFinder, findsOneWidget);
+
+      await tester.tap(settingsCtaFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Antigravity Settings'), findsOneWidget);
+    });
+
+    testWidgets('error banner Dismiss button clears error and hides banner', (
+      tester,
+    ) async {
+      final service = AntigravityService(prefs: prefs);
+      service.setLastErrorForTesting('Network error');
+
+      await tester.pumpWidget(buildChatApp(service: service));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Network error'), findsOneWidget);
+
+      final dismissFinder = find.byTooltip('Dismiss');
+      expect(dismissFinder, findsOneWidget);
+
+      await tester.tap(dismissFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Network error'), findsNothing);
+      expect(service.lastError, isNull);
+    });
   });
 }
