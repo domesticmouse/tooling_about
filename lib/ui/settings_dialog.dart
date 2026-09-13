@@ -34,9 +34,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
   @override
   void initState() {
     super.initState();
-    _apiKeyController = TextEditingController(text: widget.service.apiKey ?? '');
-    _systemInstructionsController =
-        TextEditingController(text: widget.service.systemInstructions);
+    _apiKeyController = TextEditingController(
+      text: widget.service.apiKey ?? '',
+    );
+    _systemInstructionsController = TextEditingController(
+      text: widget.service.systemInstructions,
+    );
     _selectedModel = _models.contains(widget.service.model)
         ? widget.service.model
         : _models.first;
@@ -133,10 +136,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: _save,
-          child: const Text('Save & Apply'),
-        ),
+        FilledButton(onPressed: _save, child: const Text('Save & Apply')),
       ],
     );
   }

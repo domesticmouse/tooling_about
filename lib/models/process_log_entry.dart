@@ -1,10 +1,5 @@
 /// Direction of the communication with the Antigravity subprocess.
-enum LogDirection {
-  inbound,
-  outbound,
-  system,
-  error,
-}
+enum LogDirection { inbound, outbound, system, error }
 
 /// Represents a single captured log event from or to the Antigravity subprocess.
 class ProcessLogEntry {

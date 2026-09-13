@@ -246,8 +246,10 @@ class AntigravityService extends ChangeNotifier {
     }
 
     _isGenerating = true;
-    addLog('>>> Sending prompt to Antigravity: "$prompt"',
-        direction: LogDirection.outbound);
+    addLog(
+      '>>> Sending prompt to Antigravity: "$prompt"',
+      direction: LogDirection.outbound,
+    );
     notifyListeners();
 
     StreamSubscription<String>? thoughtSub;
@@ -287,8 +289,10 @@ class AntigravityService extends ChangeNotifier {
       );
 
       await completer.future;
-      addLog('<<< Response generation complete.',
-          direction: LogDirection.inbound);
+      addLog(
+        '<<< Response generation complete.',
+        direction: LogDirection.inbound,
+      );
     } catch (e) {
       if (e is AntigravityCancelledException) {
         addLog('Generation was cancelled.', direction: LogDirection.system);

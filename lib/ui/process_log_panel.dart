@@ -1,4 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../models/process_log_entry.dart';
@@ -10,46 +14,87 @@ class ProcessLogPanel extends StatefulWidget {
   final AntigravityService service;
   final VoidCallback? onClose;
 
-  const ProcessLogPanel({
-    super.key,
-    required this.service,
-    this.onClose,
-  });
+  const ProcessLogPanel({super.key, required this.service, this.onClose});
 
   @override
   State<ProcessLogPanel> createState() => _ProcessLogPanelState();
 }
 
-class _ProcessLogPanelState extends State<ProcessLogPanel> {
+class _ProcessLogPanelState extends State<ProcessLogPanel>
+    with SingleTickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
   bool _autoScroll = true;
   String _filter = 'all'; // 'all', 'in', 'out', 'error'
   String _searchQuery = '';
 
+  late final Ticker _scrollTicker;
+  Duration _lastTick = Duration.zero;
+
   @override
   void initState() {
     super.initState();
+    _scrollTicker = createTicker(_onScrollTick);
     widget.service.addListener(_onLogsUpdated);
   }
 
   @override
   void dispose() {
     widget.service.removeListener(_onLogsUpdated);
+    _scrollTicker.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   void _onLogsUpdated() {
-    if (_autoScroll && _scrollController.hasClients) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 150),
-            curve: Curves.easeOut,
-          );
-        }
-      });
+    if (_autoScroll) {
+      _startScrollTicker();
+    }
+  }
+
+  void _onScrollTick(Duration elapsed) {
+    if (!mounted || !_scrollController.hasClients) return;
+
+    final dt = _lastTick == Duration.zero
+        ? 0.016
+        : (elapsed - _lastTick).inMicroseconds / 1000000.0;
+    _lastTick = elapsed;
+    final clampedDt = dt.clamp(0.001, 0.05);
+
+    if (!_autoScroll) {
+      _stopScrollTicker();
+      return;
+    }
+
+    final maxExtent = _scrollController.position.maxScrollExtent;
+    final current = _scrollController.offset;
+    final remaining = maxExtent - current;
+
+    if (remaining > 0.5) {
+      // Flow speed is dynamically dependent on the amount of queued content:
+      // Speeds up during a burst, then gracefully slows down towards the end,
+      // strictly preventing over-running the end of the flow.
+      final followFactor = 1.0 - math.exp(-14.0 * clampedDt);
+      final step = (remaining * followFactor).clamp(0.0, remaining);
+      _scrollController.jumpTo(current + step);
+    } else {
+      if (current != maxExtent) {
+        _scrollController.jumpTo(maxExtent);
+      }
+      _stopScrollTicker();
+    }
+  }
+
+  void _startScrollTicker() {
+    if (!_scrollTicker.isActive) {
+      _lastTick = Duration.zero;
+      _scrollTicker.start();
+    }
+  }
+
+  void _stopScrollTicker() {
+    if (_scrollTicker.isActive) {
+      _scrollTicker.stop();
+      _lastTick = Duration.zero;
     }
   }
 
@@ -60,12 +105,12 @@ class _ProcessLogPanelState extends State<ProcessLogPanel> {
       if (_filter == 'error' && !entry.isError) return false;
 
       if (_searchQuery.isNotEmpty) {
-        return entry.message
-                .toLowerCase()
-                .contains(_searchQuery.toLowerCase()) ||
-            (entry.loggerName
-                    ?.toLowerCase()
-                    .contains(_searchQuery.toLowerCase()) ??
+        return entry.message.toLowerCase().contains(
+              _searchQuery.toLowerCase(),
+            ) ||
+            (entry.loggerName?.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                ) ??
                 false);
       }
       return true;
@@ -104,14 +149,19 @@ class _ProcessLogPanelState extends State<ProcessLogPanel> {
               children: [
                 Icon(Icons.terminal, size: 18, color: colorScheme.primary),
                 const SizedBox(width: 8),
-                const Text(
-                  'Subprocess Trace',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                const Flexible(
+                  child: Text(
+                    'Subprocess Trace',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
                 const SizedBox(width: 6),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(10),
@@ -127,6 +177,12 @@ class _ProcessLogPanelState extends State<ProcessLogPanel> {
                 ),
                 const Spacer(),
                 IconButton(
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  padding: const EdgeInsets.all(4),
                   tooltip: _autoScroll
                       ? 'Auto-scroll enabled'
                       : 'Auto-scroll disabled',
@@ -137,17 +193,41 @@ class _ProcessLogPanelState extends State<ProcessLogPanel> {
                         ? colorScheme.primary
                         : colorScheme.onSurfaceVariant,
                   ),
-                  onPressed: () => setState(() => _autoScroll = !_autoScroll),
+                  onPressed: () {
+                    setState(() {
+                      _autoScroll = !_autoScroll;
+                      if (_autoScroll) {
+                        _startScrollTicker();
+                      } else {
+                        _stopScrollTicker();
+                      }
+                    });
+                  },
                 ),
                 IconButton(
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  padding: const EdgeInsets.all(4),
                   tooltip: 'Clear trace',
                   icon: const Icon(Icons.delete_sweep_outlined, size: 18),
                   onPressed: widget.service.processLogs.isEmpty
                       ? null
-                      : () => widget.service.clearLogs(),
+                      : () {
+                          _stopScrollTicker();
+                          widget.service.clearLogs();
+                        },
                 ),
                 if (widget.onClose != null)
                   IconButton(
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    padding: const EdgeInsets.all(4),
                     tooltip: 'Close trace panel',
                     icon: const Icon(Icons.close, size: 18),
                     onPressed: widget.onClose,
@@ -236,15 +316,51 @@ class _ProcessLogPanelState extends State<ProcessLogPanel> {
                       ),
                     ),
                   )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    itemCount: filteredLogs.length,
-                    itemBuilder: (context, index) {
-                      final entry = filteredLogs[index];
-                      return _LogEntryTile(entry: entry);
+                : NotificationListener<ScrollNotification>(
+                    onNotification: (notification) {
+                      if (notification is UserScrollNotification) {
+                        if (notification.direction == ScrollDirection.forward) {
+                          // User scrolled upwards, pause auto-scrolling
+                          if (_autoScroll) {
+                            setState(() => _autoScroll = false);
+                            _stopScrollTicker();
+                          }
+                        } else if (notification.direction ==
+                            ScrollDirection.reverse) {
+                          // User scrolled downwards near bottom, resume auto-scrolling
+                          if (_scrollController.hasClients &&
+                              _scrollController.position.extentAfter < 20) {
+                            if (!_autoScroll) {
+                              setState(() => _autoScroll = true);
+                              _startScrollTicker();
+                            }
+                          }
+                        }
+                      } else if (notification is ScrollUpdateNotification) {
+                        if (notification.dragDetails != null &&
+                            _scrollController.hasClients &&
+                            _scrollController.position.extentAfter > 40) {
+                          if (_autoScroll) {
+                            setState(() => _autoScroll = false);
+                            _stopScrollTicker();
+                          }
+                        }
+                      }
+                      return false;
                     },
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      physics: const ClampingScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 8,
+                      ),
+                      itemCount: filteredLogs.length,
+                      itemBuilder: (context, index) {
+                        final entry = filteredLogs[index];
+                        return _LogEntryTile(entry: entry);
+                      },
+                    ),
                   ),
           ),
         ],
@@ -270,8 +386,9 @@ class _ProcessLogPanelState extends State<ProcessLogPanel> {
           style: TextStyle(
             fontSize: 11,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            color:
-                isSelected ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+            color: isSelected
+                ? colorScheme.onPrimary
+                : colorScheme.onSurfaceVariant,
           ),
         ),
       ),
@@ -365,8 +482,10 @@ class _LogEntryTile extends StatelessWidget {
               if (parsed.isStructured) ...[
                 const SizedBox(width: 6),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: colorScheme.primaryContainer.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(3),
@@ -429,7 +548,9 @@ class _LogEntryTile extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+              color: colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.35,
+              ),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
                 color: colorScheme.outlineVariant.withValues(alpha: 0.2),

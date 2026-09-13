@@ -1,4 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
@@ -17,22 +21,29 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen>
+    with SingleTickerProviderStateMixin {
   final List<ChatMessage> _messages = [];
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
   bool _showLogPanel = true;
 
+  late final Ticker _scrollTicker;
+  Duration _lastTick = Duration.zero;
+  bool _userScrolledUp = false;
+
   @override
   void initState() {
     super.initState();
+    _scrollTicker = createTicker(_onScrollTick);
     widget.service.addListener(_onServiceChanged);
   }
 
   @override
   void dispose() {
     widget.service.removeListener(_onServiceChanged);
+    _scrollTicker.dispose();
     _textController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -43,16 +54,65 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted) setState(() {});
   }
 
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
+  void _onScrollTick(Duration elapsed) {
+    if (!mounted || !_scrollController.hasClients) return;
+
+    final dt = _lastTick == Duration.zero
+        ? 0.016
+        : (elapsed - _lastTick).inMicroseconds / 1000000.0;
+    _lastTick = elapsed;
+    final clampedDt = dt.clamp(0.001, 0.05);
+
+    // If the user intentionally scrolled up, pause automatic following
+    if (_userScrolledUp) {
+      if (!widget.service.isGenerating && _scrollTicker.isActive) {
+        _stopScrollTicker();
       }
-    });
+      return;
+    }
+
+    final maxExtent = _scrollController.position.maxScrollExtent;
+    final current = _scrollController.offset;
+    final remaining = maxExtent - current;
+
+    if (remaining > 0.5) {
+      // Fluid continuous advance: smoothly tracks scroll extent with damping
+      final followFactor = 1.0 - math.exp(-12.0 * clampedDt);
+      final step = (remaining * followFactor).clamp(0.0, remaining);
+      _scrollController.jumpTo(current + step);
+    } else {
+      if (current != maxExtent) {
+        _scrollController.jumpTo(maxExtent);
+      }
+      if (!widget.service.isGenerating) {
+        _stopScrollTicker();
+      }
+    }
+  }
+
+  void _startScrollTicker() {
+    if (!_scrollTicker.isActive) {
+      _lastTick = Duration.zero;
+      _scrollTicker.start();
+    }
+  }
+
+  void _stopScrollTicker() {
+    if (_scrollTicker.isActive) {
+      _scrollTicker.stop();
+      _lastTick = Duration.zero;
+    }
+  }
+
+  void _requestScrollFollow() {
+    if (!_userScrolledUp) {
+      _startScrollTicker();
+    }
+  }
+
+  void _scrollToBottomAndResume() {
+    setState(() => _userScrolledUp = false);
+    _startScrollTicker();
   }
 
   Future<void> _sendMessage([String? presetText]) async {
@@ -67,8 +127,7 @@ class _ChatScreenState extends State<ChatScreen> {
       content: text,
     );
 
-    final botMsgId =
-        (DateTime.now().microsecondsSinceEpoch + 1).toString();
+    final botMsgId = (DateTime.now().microsecondsSinceEpoch + 1).toString();
     final botMsg = ChatMessage(
       id: botMsgId,
       role: MessageRole.assistant,
@@ -80,45 +139,52 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _messages.add(userMsg);
       _messages.add(botMsg);
+      _userScrolledUp = false;
     });
-    _scrollToBottom();
+    _startScrollTicker();
 
     await widget.service.sendMessage(
       prompt: text,
       onToken: (token) {
+        if (!mounted) return;
         setState(() {
           botMsg.isThinking = false;
           botMsg.content += token;
         });
-        _scrollToBottom();
+        _requestScrollFollow();
       },
       onThought: (thought) {
+        if (!mounted) return;
         setState(() {
           botMsg.thoughts = (botMsg.thoughts ?? '') + thought;
         });
-        _scrollToBottom();
+        _requestScrollFollow();
       },
       onError: (err) {
+        if (!mounted) return;
         setState(() {
           botMsg.isStreaming = false;
           botMsg.isThinking = false;
           botMsg.error = err;
         });
-        _scrollToBottom();
+        _requestScrollFollow();
       },
       onDone: () {
+        if (!mounted) return;
         setState(() {
           botMsg.isStreaming = false;
           botMsg.isThinking = false;
         });
-        _scrollToBottom();
+        _requestScrollFollow();
       },
     );
   }
 
   void _clearChat() {
+    _stopScrollTicker();
     setState(() {
       _messages.clear();
+      _userScrolledUp = false;
     });
     widget.service.clearSession();
   }
@@ -198,17 +264,85 @@ class _ChatScreenState extends State<ChatScreen> {
                 Expanded(
                   child: _messages.isEmpty
                       ? _buildEmptyState(colorScheme)
-                      : ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 16,
-                          ),
-                          itemCount: _messages.length,
-                          itemBuilder: (context, index) {
-                            final message = _messages[index];
-                            return _MessageBubble(message: message);
-                          },
+                      : Stack(
+                          children: [
+                            NotificationListener<ScrollNotification>(
+                              onNotification: (notification) {
+                                if (notification is UserScrollNotification) {
+                                  if (notification.direction ==
+                                      ScrollDirection.forward) {
+                                    // User is scrolling upwards towards older messages
+                                    if (!_userScrolledUp) {
+                                      setState(() => _userScrolledUp = true);
+                                    }
+                                  } else if (notification.direction ==
+                                      ScrollDirection.reverse) {
+                                    // User is scrolling downwards towards latest messages
+                                    if (_scrollController.hasClients &&
+                                        _scrollController.position.extentAfter <
+                                            24) {
+                                      if (_userScrolledUp) {
+                                        setState(() => _userScrolledUp = false);
+                                        _startScrollTicker();
+                                      }
+                                    }
+                                  }
+                                } else if (notification
+                                    is ScrollUpdateNotification) {
+                                  // Detect user direct dragging
+                                  if (notification.dragDetails != null &&
+                                      _scrollController.hasClients &&
+                                      _scrollController.position.extentAfter >
+                                          50) {
+                                    if (!_userScrolledUp) {
+                                      setState(() => _userScrolledUp = true);
+                                    }
+                                  }
+                                }
+                                return false;
+                              },
+                              child: ListView.builder(
+                                controller: _scrollController,
+                                physics: const ClampingScrollPhysics(),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 16,
+                                ),
+                                itemCount: _messages.length,
+                                itemBuilder: (context, index) {
+                                  final message = _messages[index];
+                                  return _MessageBubble(message: message);
+                                },
+                              ),
+                            ),
+                            if (_userScrolledUp)
+                              Positioned(
+                                bottom: 16,
+                                right: 24,
+                                child: FloatingActionButton.small(
+                                  heroTag: 'scrollToBottomBtn',
+                                  tooltip: 'Scroll to bottom',
+                                  backgroundColor:
+                                      colorScheme.surfaceContainerHighest,
+                                  foregroundColor: colorScheme.primary,
+                                  elevation: 3,
+                                  onPressed: _scrollToBottomAndResume,
+                                  child: widget.service.isGenerating
+                                      ? Badge(
+                                          smallSize: 8,
+                                          backgroundColor: colorScheme.primary,
+                                          child: const Icon(
+                                            Icons.keyboard_arrow_down,
+                                            size: 20,
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.keyboard_arrow_down,
+                                          size: 20,
+                                        ),
+                                ),
+                              ),
+                          ],
                         ),
                 ),
                 _buildInputBar(colorScheme),
@@ -270,9 +404,8 @@ class _ChatScreenState extends State<ChatScreen> {
               const SizedBox(height: 16),
               Text(
                 'Welcome to Antigravity',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(context).textTheme.headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Text(
@@ -300,8 +433,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   ActionChip(
                     avatar: const Icon(Icons.help_outline, size: 16),
                     label: const Text('What tools do you have?'),
-                    onPressed: () =>
-                        _sendMessage('What tools and capabilities do you have?'),
+                    onPressed: () => _sendMessage(
+                      'What tools and capabilities do you have?',
+                    ),
                   ),
                 ],
               ),
@@ -408,8 +542,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment:
-            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         children: [
           if (!isUser) ...[
             CircleAvatar(
@@ -508,35 +643,35 @@ class _MessageBubbleState extends State<_MessageBubble> {
                         child: MarkdownBody(
                           data: widget.message.thoughts!,
                           selectable: true,
-                          styleSheet:
-                              MarkdownStyleSheet.fromTheme(theme).copyWith(
-                            p: TextStyle(
-                              fontSize: 12,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                            em: TextStyle(
-                              fontSize: 12,
-                              fontStyle: FontStyle.italic,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                            strong: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: colorScheme.onSurface,
-                            ),
-                            code: TextStyle(
-                              backgroundColor: colorScheme
-                                  .surfaceContainerHighest
-                                  .withValues(alpha: 0.7),
-                              fontFamily: 'monospace',
-                              fontSize: 11,
-                            ),
-                            codeblockDecoration: BoxDecoration(
-                              color: colorScheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.6),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
+                          styleSheet: MarkdownStyleSheet.fromTheme(theme)
+                              .copyWith(
+                                p: TextStyle(
+                                  fontSize: 12,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                                em: TextStyle(
+                                  fontSize: 12,
+                                  fontStyle: FontStyle.italic,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                                strong: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: colorScheme.onSurface,
+                                ),
+                                code: TextStyle(
+                                  backgroundColor: colorScheme
+                                      .surfaceContainerHighest
+                                      .withValues(alpha: 0.7),
+                                  fontFamily: 'monospace',
+                                  fontSize: 11,
+                                ),
+                                codeblockDecoration: BoxDecoration(
+                                  color: colorScheme.surfaceContainerHighest
+                                      .withValues(alpha: 0.6),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                              ),
                         ),
                       ),
                     ],
@@ -558,28 +693,27 @@ class _MessageBubbleState extends State<_MessageBubble> {
                             selectable: true,
                             styleSheet: MarkdownStyleSheet.fromTheme(theme)
                                 .copyWith(
-                              p: TextStyle(
-                                fontSize: 14,
-                                color: colorScheme.onSurface,
-                              ),
-                              code: TextStyle(
-                                backgroundColor: colorScheme
-                                    .surfaceContainerHighest
-                                    .withValues(alpha: 0.7),
-                                fontFamily: 'monospace',
-                                fontSize: 13,
-                              ),
-                              codeblockDecoration: BoxDecoration(
-                                color: colorScheme.surfaceContainerHighest
-                                    .withValues(alpha: 0.6),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: colorScheme.outlineVariant.withValues(
-                                    alpha: 0.4,
+                                  p: TextStyle(
+                                    fontSize: 14,
+                                    color: colorScheme.onSurface,
+                                  ),
+                                  code: TextStyle(
+                                    backgroundColor: colorScheme
+                                        .surfaceContainerHighest
+                                        .withValues(alpha: 0.7),
+                                    fontFamily: 'monospace',
+                                    fontSize: 13,
+                                  ),
+                                  codeblockDecoration: BoxDecoration(
+                                    color: colorScheme.surfaceContainerHighest
+                                        .withValues(alpha: 0.6),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: colorScheme.outlineVariant
+                                          .withValues(alpha: 0.4),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
                           )
                   else if (widget.message.isStreaming)
                     Row(

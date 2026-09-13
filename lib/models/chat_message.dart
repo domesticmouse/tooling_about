@@ -1,9 +1,5 @@
 /// Role of the message sender in the conversation.
-enum MessageRole {
-  user,
-  assistant,
-  system,
-}
+enum MessageRole { user, assistant, system }
 
 /// Represents a single message in the chat conversation.
 class ChatMessage {

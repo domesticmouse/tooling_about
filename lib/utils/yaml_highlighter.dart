@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 /// Result of parsing a log message, separating any prefix from JSON/YAML payload.
@@ -169,16 +170,21 @@ class YamlHighlighter {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // Syntax colors
-    final keyColor =
-        isDark ? const Color(0xFF64D2FF) : const Color(0xFF0066CC); // Cyan/Blue
-    final stringColor =
-        isDark ? const Color(0xFF98E586) : const Color(0xFF1E8238); // Green
-    final numberColor =
-        isDark ? const Color(0xFFFFB86C) : const Color(0xFFB54708); // Amber/Orange
-    final boolNullColor =
-        isDark ? const Color(0xFFFF79C6) : const Color(0xFF9333EA); // Magenta/Purple
-    final bulletColor =
-        isDark ? const Color(0xFFBD93F9) : const Color(0xFF7C3AED); // Lavender
+    final keyColor = isDark
+        ? const Color(0xFF64D2FF)
+        : const Color(0xFF0066CC); // Cyan/Blue
+    final stringColor = isDark
+        ? const Color(0xFF98E586)
+        : const Color(0xFF1E8238); // Green
+    final numberColor = isDark
+        ? const Color(0xFFFFB86C)
+        : const Color(0xFFB54708); // Amber/Orange
+    final boolNullColor = isDark
+        ? const Color(0xFFFF79C6)
+        : const Color(0xFF9333EA); // Magenta/Purple
+    final bulletColor = isDark
+        ? const Color(0xFFBD93F9)
+        : const Color(0xFF7C3AED); // Lavender
     final defaultColor = isDark ? Colors.white70 : Colors.black87;
 
     final lines = yaml.split('\n');
@@ -199,13 +205,12 @@ class YamlHighlighter {
 
       // Match bullet '-'
       if (rest.startsWith('-')) {
-        spans.add(TextSpan(
-          text: '- ',
-          style: TextStyle(
-            color: bulletColor,
-            fontWeight: FontWeight.bold,
+        spans.add(
+          TextSpan(
+            text: '- ',
+            style: TextStyle(color: bulletColor, fontWeight: FontWeight.bold),
           ),
-        ));
+        );
         rest = rest.length > 1 ? rest.substring(1).trimLeft() : '';
       }
 
@@ -214,13 +219,12 @@ class YamlHighlighter {
       if (keyMatch != null) {
         final keyText = keyMatch.group(1)!;
         final colonSpacing = keyMatch.group(2)!;
-        spans.add(TextSpan(
-          text: '$keyText:',
-          style: TextStyle(
-            color: keyColor,
-            fontWeight: FontWeight.w600,
+        spans.add(
+          TextSpan(
+            text: '$keyText:',
+            style: TextStyle(color: keyColor, fontWeight: FontWeight.w600),
           ),
-        ));
+        );
         if (colonSpacing.isNotEmpty) {
           spans.add(TextSpan(text: colonSpacing));
         }
@@ -230,25 +234,36 @@ class YamlHighlighter {
       // Value formatting
       if (rest.isNotEmpty) {
         if (rest.startsWith('"') && rest.endsWith('"')) {
-          spans.add(TextSpan(
-            text: rest,
-            style: TextStyle(color: stringColor),
-          ));
+          spans.add(
+            TextSpan(
+              text: rest,
+              style: TextStyle(color: stringColor),
+            ),
+          );
         } else if (RegExp(r'^-?\d+(\.\d+)?$').hasMatch(rest)) {
-          spans.add(TextSpan(
-            text: rest,
-            style: TextStyle(color: numberColor, fontWeight: FontWeight.w500),
-          ));
+          spans.add(
+            TextSpan(
+              text: rest,
+              style: TextStyle(color: numberColor, fontWeight: FontWeight.w500),
+            ),
+          );
         } else if (rest == 'true' || rest == 'false' || rest == 'null') {
-          spans.add(TextSpan(
-            text: rest,
-            style: TextStyle(color: boolNullColor, fontWeight: FontWeight.bold),
-          ));
+          spans.add(
+            TextSpan(
+              text: rest,
+              style: TextStyle(
+                color: boolNullColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          );
         } else {
-          spans.add(TextSpan(
-            text: rest,
-            style: TextStyle(color: defaultColor),
-          ));
+          spans.add(
+            TextSpan(
+              text: rest,
+              style: TextStyle(color: defaultColor),
+            ),
+          );
         }
       }
 
