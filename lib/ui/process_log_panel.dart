@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../models/process_log_entry.dart';
 import '../services/antigravity_service.dart';
+import '../utils/yaml_highlighter.dart';
 
 /// Right-hand scrollable container displaying the trace of all subprocess messages.
 class ProcessLogPanel extends StatefulWidget {
@@ -287,6 +288,7 @@ class _LogEntryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final parsed = YamlHighlighter.parse(entry.message);
 
     Color badgeColor;
     Color textColor;
@@ -321,11 +323,11 @@ class _LogEntryTile extends StatelessWidget {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.all(8),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: colorScheme.surface.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(6),
+        color: colorScheme.surface.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: entry.isError
               ? colorScheme.error.withValues(alpha: 0.4)
@@ -338,7 +340,7 @@ class _LogEntryTile extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: badgeColor,
                   borderRadius: BorderRadius.circular(4),
@@ -360,6 +362,26 @@ class _LogEntryTile extends StatelessWidget {
                   ],
                 ),
               ),
+              if (parsed.isStructured) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    'YAML',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onPrimaryContainer,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(width: 8),
               Text(
                 entry.formattedTime,
@@ -373,28 +395,63 @@ class _LogEntryTile extends StatelessWidget {
               IconButton(
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                icon: const Icon(Icons.copy, size: 12),
-                tooltip: 'Copy message',
+                icon: const Icon(Icons.copy, size: 13),
+                tooltip: parsed.isStructured ? 'Copy YAML' : 'Copy message',
                 onPressed: () {
-                  Clipboard.setData(ClipboardData(text: entry.message));
+                  Clipboard.setData(ClipboardData(text: parsed.content));
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Log copied to clipboard'),
-                      duration: Duration(seconds: 1),
+                    SnackBar(
+                      content: Text(
+                        parsed.isStructured
+                            ? 'YAML payload copied to clipboard'
+                            : 'Log copied to clipboard',
+                      ),
+                      duration: const Duration(seconds: 1),
                     ),
                   );
                 },
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          SelectableText(
-            entry.message,
-            style: TextStyle(
-              fontSize: 11,
-              fontFamily: 'monospace',
-              color: entry.isError ? colorScheme.error : colorScheme.onSurface,
+          if (parsed.prefix != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              parsed.prefix!,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.primary,
+              ),
             ),
+          ],
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+              ),
+            ),
+            child: parsed.isStructured
+                ? SelectableText.rich(
+                    YamlHighlighter.buildSyntaxHighlightedSpan(
+                      parsed.content,
+                      context,
+                    ),
+                  )
+                : SelectableText(
+                    entry.message,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      color: entry.isError
+                          ? colorScheme.error
+                          : colorScheme.onSurface,
+                    ),
+                  ),
           ),
         ],
       ),
