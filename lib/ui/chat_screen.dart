@@ -439,6 +439,13 @@ class _ChatScreenState extends State<ChatScreen>
                 alignment: WrapAlignment.center,
                 children: [
                   ActionChip(
+                    avatar: const Icon(Icons.quiz_outlined, size: 16),
+                    label: const Text('Multiple choice question (GenUI)'),
+                    onPressed: () => _sendMessage(
+                      'Ask me a multiple choice question with 3 options using the MultipleChoiceQuestion GenUI component',
+                    ),
+                  ),
+                  ActionChip(
                     avatar: const Icon(Icons.widgets_outlined, size: 16),
                     label: const Text('Interactive form (GenUI)'),
                     onPressed: () => _sendMessage(

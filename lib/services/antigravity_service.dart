@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:antigravity/antigravity.dart' hide Conversation;
@@ -10,6 +11,7 @@ import 'package:logging/logging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/process_log_entry.dart';
+import '../ui/genui/multiple_choice_question_item.dart';
 
 /// Service managing the lifecycle of the Google Antigravity [Agent],
 /// generative UI via [Conversation] / [SurfaceController], and capturing a trace
@@ -114,16 +116,36 @@ class AntigravityService extends ChangeNotifier {
   SurfaceController get surfaceController => _surfaceController;
   Conversation get conversation => _conversation;
   Catalog get catalog => _catalog;
+  A2uiTransportAdapter get transport => _transport;
 
+  static Catalog _buildCatalog() {
+    final base = BasicCatalogItems.asCatalog();
+    return base.copyWith(
+      newItems: [multipleChoiceQuestionItem],
+      systemPromptFragments: [
+        ...base.systemPromptFragments,
+        '''
+When asking the user a multiple-choice question, clarifying requirements, or offering alternatives, use the `MultipleChoiceQuestion` component:
+- `question`: The question string.
+- `options`: List of string choices.
+- `allowMultiple`: (optional bool) Set to true if the user can select multiple options (checkboxes). Defaults to false (single-choice radio buttons).
+- `submitLabel`: (optional string) Custom text for the submit button. Defaults to "Submit Answer".
+- IMPORTANT: Do NOT include an "Other" option in the `options` array. The `MultipleChoiceQuestion` component automatically provides an "Other (write your own answer)" choice with a text input field.
+''',
+      ],
+    );
+  }
+
+  static final Catalog _defaultCatalog = _buildCatalog();
   static final String _genUiSystemInstructions = PromptBuilder.chat(
-    catalog: BasicCatalogItems.asCatalog(),
+    catalog: _defaultCatalog,
   ).systemPromptJoined();
 
   String get effectiveSystemInstructions =>
       '$_systemInstructions\n\n$_genUiSystemInstructions';
 
   void _initGenUi() {
-    _catalog = BasicCatalogItems.asCatalog();
+    _catalog = _defaultCatalog;
     _surfaceController = SurfaceController(catalogs: [_catalog]);
     _transport = A2uiTransportAdapter(onSend: _handleTransportSend);
     _conversation = Conversation(
@@ -167,13 +189,38 @@ class AntigravityService extends ChangeNotifier {
   Future<void> _handleTransportSend(genui.ChatMessage message) async {
     String text = message.text;
     if (text.isEmpty) {
-      final uiParts = message.parts
-          .map((p) {
-            final ui = p.asUiInteractionPart;
-            return ui != null ? ui.interaction : p.toString();
-          })
-          .where((s) => s.isNotEmpty);
-      text = uiParts.join('\n');
+      final formattedParts = <String>[];
+      for (final p in message.parts) {
+        final ui = p.asUiInteractionPart;
+        if (ui != null) {
+          try {
+            final decoded = jsonDecode(ui.interaction);
+            if (decoded is Map<String, dynamic>) {
+              final action =
+                  (decoded['action'] as Map<String, dynamic>?) ?? decoded;
+              if (action['name'] == 'answer_submitted') {
+                final ctx = action['context'] as Map<String, dynamic>?;
+                final question = ctx?['question'] as String?;
+                final answer = ctx?['answer'] as String?;
+                if (question != null &&
+                    question.isNotEmpty &&
+                    answer != null &&
+                    answer.isNotEmpty) {
+                  formattedParts.add('My answer to "$question" is: $answer');
+                  continue;
+                } else if (answer != null && answer.isNotEmpty) {
+                  formattedParts.add('My answer is: $answer');
+                  continue;
+                }
+              }
+            }
+          } catch (_) {}
+          formattedParts.add(ui.interaction);
+        } else {
+          formattedParts.add(p.toString());
+        }
+      }
+      text = formattedParts.where((s) => s.isNotEmpty).join('\n');
     }
 
     addLog(
