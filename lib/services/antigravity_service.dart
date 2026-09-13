@@ -9,7 +9,7 @@ class AntigravityService extends ChangeNotifier {
   Agent? _agent;
   ChatResponse? _activeResponse;
 
-  String _model = 'gemini-2.5-flash';
+  String _model = 'gemini-3.8-flash';
   String? _apiKey;
   String _systemInstructions =
       'You are a helpful, insightful AI assistant running in a desktop Flutter app powered by Google Antigravity.';
