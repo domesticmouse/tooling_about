@@ -12,6 +12,7 @@ import '../models/process_log_entry.dart';
 class AntigravityService extends ChangeNotifier {
   Agent? _agent;
   ChatResponse? _activeResponse;
+  Completer<void>? _generationCompleter;
 
   String _model = 'gemini-3.8-flash';
   String? _apiKey;
@@ -203,9 +204,9 @@ class AntigravityService extends ChangeNotifier {
 
   /// Cancels any currently active response streaming.
   Future<void> cancelGeneration() async {
-    if (_activeResponse != null) {
+    if (_activeResponse != null || _isGenerating) {
       try {
-        _activeResponse!.cancel();
+        _activeResponse?.cancel();
         addLog(
           '>>> User requested cancellation of active response.',
           direction: LogDirection.outbound,
@@ -213,6 +214,14 @@ class AntigravityService extends ChangeNotifier {
       } catch (e) {
         addLog('Error cancelling response: $e', direction: LogDirection.error);
       }
+
+      if (_generationCompleter != null && !_generationCompleter!.isCompleted) {
+        _generationCompleter!.completeError(
+          AntigravityCancelledException('Generation was cancelled.'),
+        );
+        _generationCompleter = null;
+      }
+
       _activeResponse = null;
       _isGenerating = false;
       notifyListeners();
@@ -260,6 +269,7 @@ class AntigravityService extends ChangeNotifier {
       _activeResponse = response;
 
       final completer = Completer<void>();
+      _generationCompleter = completer;
 
       // Stream thoughts/reasoning in parallel
       thoughtSub = response.thoughts.listen(
@@ -301,6 +311,10 @@ class AntigravityService extends ChangeNotifier {
         onError(e.toString());
       }
     } finally {
+      if (_generationCompleter != null && !_generationCompleter!.isCompleted) {
+        _generationCompleter!.complete();
+      }
+      _generationCompleter = null;
       await thoughtSub?.cancel();
       await textSub?.cancel();
       _activeResponse = null;
@@ -312,6 +326,12 @@ class AntigravityService extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_generationCompleter != null && !_generationCompleter!.isCompleted) {
+      _generationCompleter!.completeError(
+        AntigravityCancelledException('Service disposed.'),
+      );
+      _generationCompleter = null;
+    }
     _logSubscription?.cancel();
     _activeResponse?.cancel();
     _agent?.stop();

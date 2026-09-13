@@ -93,4 +93,35 @@ void main() {
       service.dispose();
     },
   );
+
+  group('AntigravityService Concurrency and Cancellation', () {
+    test(
+      'cancelGeneration safely resets state when no generation is active',
+      () async {
+        final service = AntigravityService();
+        expect(service.isGenerating, isFalse);
+
+        await service.cancelGeneration();
+
+        expect(service.isGenerating, isFalse);
+        service.dispose();
+      },
+    );
+
+    test(
+      'cancelGeneration and dispose handle repeated calls cleanly',
+      () async {
+        final service = AntigravityService();
+
+        expect(service.isGenerating, isFalse);
+
+        // Verify cancelGeneration can be called repeatedly without throwing
+        await service.cancelGeneration();
+        await service.cancelGeneration();
+        expect(service.isGenerating, isFalse);
+
+        service.dispose();
+      },
+    );
+  });
 }
