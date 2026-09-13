@@ -23,11 +23,14 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen>
     with SingleTickerProviderStateMixin {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final List<ChatMessage> _messages = [];
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
   bool _showLogPanel = true;
+  double _logPanelWidth = 420.0;
+  bool _isDraggingSplitter = false;
 
   late final Ticker _scrollTicker;
   Duration _lastTick = Duration.zero;
@@ -193,8 +196,22 @@ class _ChatScreenState extends State<ChatScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isCompact = screenWidth < 800;
 
     return Scaffold(
+      key: _scaffoldKey,
+      endDrawer: isCompact
+          ? Drawer(
+              width: math.min(420, screenWidth * 0.85),
+              child: SafeArea(
+                child: ProcessLogPanel(
+                  service: widget.service,
+                  onClose: () => _scaffoldKey.currentState?.closeEndDrawer(),
+                ),
+              ),
+            )
+          : null,
       appBar: AppBar(
         titleSpacing: 16,
         title: Row(
@@ -233,13 +250,23 @@ class _ChatScreenState extends State<ChatScreen>
         ),
         actions: [
           IconButton(
-            tooltip: _showLogPanel
-                ? 'Hide subprocess trace'
-                : 'Show subprocess trace',
+            tooltip: isCompact
+                ? 'Open subprocess trace'
+                : (_showLogPanel
+                      ? 'Hide subprocess trace'
+                      : 'Show subprocess trace'),
             icon: Icon(
-              _showLogPanel ? Icons.terminal : Icons.terminal_outlined,
+              isCompact
+                  ? Icons.terminal
+                  : (_showLogPanel ? Icons.terminal : Icons.terminal_outlined),
             ),
-            onPressed: () => setState(() => _showLogPanel = !_showLogPanel),
+            onPressed: () {
+              if (isCompact) {
+                _scaffoldKey.currentState?.openEndDrawer();
+              } else {
+                setState(() => _showLogPanel = !_showLogPanel);
+              }
+            },
           ),
           IconButton(
             tooltip: 'Clear conversation',
@@ -254,110 +281,170 @@ class _ChatScreenState extends State<ChatScreen>
           const SizedBox(width: 8),
         ],
       ),
-      body: Row(
-        children: [
-          Expanded(
-            child: Column(
-              children: [
-                if (widget.service.lastError != null && _messages.isEmpty)
-                  _buildErrorBanner(widget.service.lastError!),
-                Expanded(
-                  child: _messages.isEmpty
-                      ? _buildEmptyState(colorScheme)
-                      : Stack(
-                          children: [
-                            NotificationListener<ScrollNotification>(
-                              onNotification: (notification) {
-                                if (notification is UserScrollNotification) {
-                                  if (notification.direction ==
-                                      ScrollDirection.forward) {
-                                    // User is scrolling upwards towards older messages
-                                    if (!_userScrolledUp) {
-                                      setState(() => _userScrolledUp = true);
-                                    }
-                                  } else if (notification.direction ==
-                                      ScrollDirection.reverse) {
-                                    // User is scrolling downwards towards latest messages
-                                    if (_scrollController.hasClients &&
-                                        _scrollController.position.extentAfter <
-                                            24) {
-                                      if (_userScrolledUp) {
-                                        setState(() => _userScrolledUp = false);
-                                        _startScrollTicker();
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxPanelWidth = math.max(280.0, constraints.maxWidth - 360.0);
+          final clampedWidth = _logPanelWidth.clamp(280.0, maxPanelWidth);
+
+          return Row(
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    if (widget.service.lastError != null && _messages.isEmpty)
+                      _buildErrorBanner(widget.service.lastError!),
+                    Expanded(
+                      child: _messages.isEmpty
+                          ? _buildEmptyState(colorScheme)
+                          : Stack(
+                              children: [
+                                NotificationListener<ScrollNotification>(
+                                  onNotification: (notification) {
+                                    if (notification
+                                        is UserScrollNotification) {
+                                      if (notification.direction ==
+                                          ScrollDirection.forward) {
+                                        // User is scrolling upwards towards older messages
+                                        if (!_userScrolledUp) {
+                                          setState(
+                                            () => _userScrolledUp = true,
+                                          );
+                                        }
+                                      } else if (notification.direction ==
+                                          ScrollDirection.reverse) {
+                                        // User is scrolling downwards towards latest messages
+                                        if (_scrollController.hasClients &&
+                                            _scrollController
+                                                    .position
+                                                    .extentAfter <
+                                                24) {
+                                          if (_userScrolledUp) {
+                                            setState(
+                                              () => _userScrolledUp = false,
+                                            );
+                                            _startScrollTicker();
+                                          }
+                                        }
+                                      }
+                                    } else if (notification
+                                        is ScrollUpdateNotification) {
+                                      // Detect user direct dragging
+                                      if (notification.dragDetails != null &&
+                                          _scrollController.hasClients &&
+                                          _scrollController
+                                                  .position
+                                                  .extentAfter >
+                                              50) {
+                                        if (!_userScrolledUp) {
+                                          setState(
+                                            () => _userScrolledUp = true,
+                                          );
+                                        }
                                       }
                                     }
-                                  }
-                                } else if (notification
-                                    is ScrollUpdateNotification) {
-                                  // Detect user direct dragging
-                                  if (notification.dragDetails != null &&
-                                      _scrollController.hasClients &&
-                                      _scrollController.position.extentAfter >
-                                          50) {
-                                    if (!_userScrolledUp) {
-                                      setState(() => _userScrolledUp = true);
-                                    }
-                                  }
-                                }
-                                return false;
-                              },
-                              child: ListView.builder(
-                                controller: _scrollController,
-                                physics: const ClampingScrollPhysics(),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 16,
+                                    return false;
+                                  },
+                                  child: ListView.builder(
+                                    controller: _scrollController,
+                                    physics: const ClampingScrollPhysics(),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 16,
+                                    ),
+                                    itemCount: _messages.length,
+                                    itemBuilder: (context, index) {
+                                      final message = _messages[index];
+                                      return _MessageBubble(message: message);
+                                    },
+                                  ),
                                 ),
-                                itemCount: _messages.length,
-                                itemBuilder: (context, index) {
-                                  final message = _messages[index];
-                                  return _MessageBubble(message: message);
-                                },
-                              ),
+                                if (_userScrolledUp)
+                                  Positioned(
+                                    bottom: 16,
+                                    right: 24,
+                                    child: FloatingActionButton.small(
+                                      heroTag: 'scrollToBottomBtn',
+                                      tooltip: 'Scroll to bottom',
+                                      backgroundColor:
+                                          colorScheme.surfaceContainerHighest,
+                                      foregroundColor: colorScheme.primary,
+                                      elevation: 3,
+                                      onPressed: _scrollToBottomAndResume,
+                                      child: widget.service.isGenerating
+                                          ? Badge(
+                                              smallSize: 8,
+                                              backgroundColor:
+                                                  colorScheme.primary,
+                                              child: const Icon(
+                                                Icons.keyboard_arrow_down,
+                                                size: 20,
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.keyboard_arrow_down,
+                                              size: 20,
+                                            ),
+                                    ),
+                                  ),
+                              ],
                             ),
-                            if (_userScrolledUp)
-                              Positioned(
-                                bottom: 16,
-                                right: 24,
-                                child: FloatingActionButton.small(
-                                  heroTag: 'scrollToBottomBtn',
-                                  tooltip: 'Scroll to bottom',
-                                  backgroundColor:
-                                      colorScheme.surfaceContainerHighest,
-                                  foregroundColor: colorScheme.primary,
-                                  elevation: 3,
-                                  onPressed: _scrollToBottomAndResume,
-                                  child: widget.service.isGenerating
-                                      ? Badge(
-                                          smallSize: 8,
-                                          backgroundColor: colorScheme.primary,
-                                          child: const Icon(
-                                            Icons.keyboard_arrow_down,
-                                            size: 20,
-                                          ),
-                                        )
-                                      : const Icon(
-                                          Icons.keyboard_arrow_down,
-                                          size: 20,
-                                        ),
-                                ),
-                              ),
-                          ],
-                        ),
+                    ),
+                    _buildInputBar(colorScheme),
+                  ],
                 ),
-                _buildInputBar(colorScheme),
-              ],
-            ),
-          ),
-          if (_showLogPanel)
-            SizedBox(
-              width: 420,
-              child: ProcessLogPanel(
-                service: widget.service,
-                onClose: () => setState(() => _showLogPanel = false),
               ),
-            ),
-        ],
+              if (!isCompact && _showLogPanel) ...[
+                // Draggable vertical splitter
+                MouseRegion(
+                  cursor: SystemMouseCursors.resizeColumn,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onHorizontalDragStart: (_) {
+                      setState(() => _isDraggingSplitter = true);
+                    },
+                    onHorizontalDragUpdate: (details) {
+                      setState(() {
+                        // Dragging left increases log panel width, dragging right decreases it
+                        _logPanelWidth = (_logPanelWidth - details.delta.dx)
+                            .clamp(280.0, maxPanelWidth);
+                      });
+                    },
+                    onHorizontalDragEnd: (_) {
+                      setState(() => _isDraggingSplitter = false);
+                    },
+                    onHorizontalDragCancel: () {
+                      setState(() => _isDraggingSplitter = false);
+                    },
+                    child: Container(
+                      width: 8,
+                      color: _isDraggingSplitter
+                          ? colorScheme.primary.withValues(alpha: 0.3)
+                          : Colors.transparent,
+                      child: Center(
+                        child: Container(
+                          width: 1.5,
+                          height: double.infinity,
+                          color: _isDraggingSplitter
+                              ? colorScheme.primary
+                              : colorScheme.outlineVariant.withValues(
+                                  alpha: 0.6,
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: clampedWidth,
+                  child: ProcessLogPanel(
+                    service: widget.service,
+                    onClose: () => setState(() => _showLogPanel = false),
+                  ),
+                ),
+              ],
+            ],
+          );
+        },
       ),
     );
   }

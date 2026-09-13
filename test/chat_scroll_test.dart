@@ -159,4 +159,63 @@ void main() {
       service.dispose();
     });
   });
+
+  group('Responsive Layout and Splitter', () {
+    testWidgets(
+      'Wide screen displays inline side panel and draggable splitter',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(1200, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final service = AntigravityService();
+        await tester.pumpWidget(
+          MaterialApp(home: ChatScreen(service: service)),
+        );
+        await tester.pumpAndSettle();
+
+        // Inline ProcessLogPanel should be visible
+        expect(find.byType(ProcessLogPanel), findsOneWidget);
+        // MouseRegion for splitter with resizeColumn cursor should exist
+        expect(
+          find.byWidgetPredicate(
+            (w) =>
+                w is MouseRegion && w.cursor == SystemMouseCursors.resizeColumn,
+          ),
+          findsOneWidget,
+        );
+
+        service.dispose();
+      },
+    );
+
+    testWidgets('Compact screen hides inline panel and opens drawer on tap', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(600, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final service = AntigravityService();
+      await tester.pumpWidget(MaterialApp(home: ChatScreen(service: service)));
+      await tester.pumpAndSettle();
+
+      // Inline ProcessLogPanel should NOT be visible
+      expect(find.byType(ProcessLogPanel), findsNothing);
+
+      // Tap the terminal action button to open end drawer
+      final traceBtn = find.byTooltip('Open subprocess trace');
+      expect(traceBtn, findsOneWidget);
+      await tester.tap(traceBtn);
+      await tester.pumpAndSettle();
+
+      // Now ProcessLogPanel should be rendered inside the Drawer
+      expect(find.byType(Drawer), findsOneWidget);
+      expect(find.byType(ProcessLogPanel), findsOneWidget);
+
+      service.dispose();
+    });
+  });
 }
