@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tooling_about/models/process_log_entry.dart';
 import 'package:tooling_about/services/antigravity_service.dart';
 import 'package:tooling_about/ui/chat_screen.dart';
@@ -217,5 +218,102 @@ void main() {
 
       service.dispose();
     });
+  });
+
+  group('Configuration Persistence with SharedPreferences', () {
+    test('loads persisted model, system instructions, and API key', () async {
+      SharedPreferences.setMockInitialValues({
+        AntigravityService.prefKeyModel: 'gemini-2.5-pro',
+        AntigravityService.prefKeyInstructions: 'Custom test instructions',
+        AntigravityService.prefKeyApiKey: 'test-persisted-api-key',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final service = AntigravityService(prefs: prefs);
+
+      expect(service.model, 'gemini-2.5-pro');
+      expect(service.systemInstructions, 'Custom test instructions');
+      expect(service.apiKey, 'test-persisted-api-key');
+      expect(service.hasApiKey, isTrue);
+
+      service.dispose();
+    });
+
+    test(
+      'updateSettings writes to SharedPreferences and removes empty key',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final prefs = await SharedPreferences.getInstance();
+        final service = AntigravityService(prefs: prefs);
+
+        // Default values initially
+        expect(service.model, 'gemini-3.8-flash');
+
+        // Update settings
+        await service.updateSettings(
+          apiKey: 'new-key-123',
+          model: 'gemini-2.5-flash',
+          systemInstructions: 'Helpful expert',
+        );
+
+        expect(
+          prefs.getString(AntigravityService.prefKeyModel),
+          'gemini-2.5-flash',
+        );
+        expect(
+          prefs.getString(AntigravityService.prefKeyInstructions),
+          'Helpful expert',
+        );
+        expect(
+          prefs.getString(AntigravityService.prefKeyApiKey),
+          'new-key-123',
+        );
+
+        // Removing API key
+        await service.updateSettings(apiKey: '');
+        expect(prefs.getString(AntigravityService.prefKeyApiKey), isNull);
+        expect(service.customApiKey, isNull);
+
+        service.dispose();
+      },
+    );
+
+    test(
+      'distinguishes custom manually entered key from environment key',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final prefs = await SharedPreferences.getInstance();
+        final service = AntigravityService(prefs: prefs);
+
+        // Without custom key, customApiKey is null
+        expect(service.customApiKey, isNull);
+
+        // If environment key exists, isUsingEnvironmentApiKey is true
+        if (service.environmentApiKey != null) {
+          expect(service.isUsingEnvironmentApiKey, isTrue);
+          expect(service.apiKey, service.environmentApiKey);
+        }
+
+        // Enter manual custom key
+        await service.updateSettings(apiKey: 'custom-override-key');
+        expect(service.customApiKey, 'custom-override-key');
+        expect(service.apiKey, 'custom-override-key');
+        expect(service.isUsingEnvironmentApiKey, isFalse);
+        expect(
+          prefs.getString(AntigravityService.prefKeyApiKey),
+          'custom-override-key',
+        );
+
+        // Clear manual key
+        await service.updateSettings(apiKey: '');
+        expect(service.customApiKey, isNull);
+        expect(prefs.getString(AntigravityService.prefKeyApiKey), isNull);
+        if (service.environmentApiKey != null) {
+          expect(service.isUsingEnvironmentApiKey, isTrue);
+          expect(service.apiKey, service.environmentApiKey);
+        }
+
+        service.dispose();
+      },
+    );
   });
 }

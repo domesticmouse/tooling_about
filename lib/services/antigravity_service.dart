@@ -5,18 +5,26 @@ import 'dart:io';
 import 'package:antigravity/antigravity.dart';
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/process_log_entry.dart';
 
 /// Service managing the lifecycle of the Google Antigravity [Agent]
 /// and capturing a trace of all subprocess communication.
 class AntigravityService extends ChangeNotifier {
+  static const String prefKeyApiKey = 'antigravity_api_key';
+  static const String prefKeyModel = 'antigravity_model';
+  static const String prefKeyInstructions = 'antigravity_system_instructions';
+
+  final SharedPreferences? prefs;
+
   Agent? _agent;
   ChatResponse? _activeResponse;
   Completer<void>? _generationCompleter;
 
   String _model = 'gemini-3.8-flash';
-  String? _apiKey;
+  String? _customApiKey;
+  String? _environmentApiKey;
   String _systemInstructions =
       'You are a helpful, insightful AI assistant running in a desktop Flutter app powered by Google Antigravity.';
 
@@ -28,18 +36,12 @@ class AntigravityService extends ChangeNotifier {
   final ValueNotifier<int> _logNotifier = ValueNotifier<int>(0);
   StreamSubscription<LogRecord>? _logSubscription;
 
-  AntigravityService() {
+  AntigravityService({this.prefs}) {
     // Enable fine-grained logging across the Dart logging hierarchy
     Logger.root.level = Level.ALL;
     _logSubscription = Logger.root.onRecord.listen(_handleLogRecord);
 
-    // Attempt to load API key from environment variable if available.
-    try {
-      final envKey = Platform.environment['GEMINI_API_KEY'];
-      if (envKey != null && envKey.isNotEmpty) {
-        _apiKey = envKey;
-      }
-    } catch (_) {}
+    _initSettings();
 
     addLog(
       'Service initialized. Antigravity logging enabled at Level.ALL.',
@@ -47,8 +49,40 @@ class AntigravityService extends ChangeNotifier {
     );
   }
 
+  void _initSettings() {
+    // 1. Model
+    final savedModel = prefs?.getString(prefKeyModel);
+    if (savedModel != null && savedModel.isNotEmpty) {
+      _model = savedModel;
+    }
+
+    // 2. System Instructions
+    final savedInstructions = prefs?.getString(prefKeyInstructions);
+    if (savedInstructions != null && savedInstructions.isNotEmpty) {
+      _systemInstructions = savedInstructions;
+    }
+
+    // 3. Environment API Key
+    try {
+      final envKey = Platform.environment['GEMINI_API_KEY'];
+      if (envKey != null && envKey.trim().isNotEmpty) {
+        _environmentApiKey = envKey.trim();
+      }
+    } catch (_) {}
+
+    // 4. Manually entered API Key from preferences
+    final savedApiKey = prefs?.getString(prefKeyApiKey);
+    if (savedApiKey != null && savedApiKey.trim().isNotEmpty) {
+      _customApiKey = savedApiKey.trim();
+    }
+  }
+
   String get model => _model;
-  String? get apiKey => _apiKey;
+  String? get customApiKey => _customApiKey;
+  String? get environmentApiKey => _environmentApiKey;
+  bool get isUsingEnvironmentApiKey =>
+      _customApiKey == null && _environmentApiKey != null;
+  String? get apiKey => _customApiKey ?? _environmentApiKey;
   String get systemInstructions => _systemInstructions;
   bool get isInitializing => _isInitializing;
   bool get isGenerating => _isGenerating;
@@ -57,7 +91,7 @@ class AntigravityService extends ChangeNotifier {
   List<ProcessLogEntry> get processLogs => List.unmodifiable(_processLogs);
   ValueListenable<int> get logNotifier => _logNotifier;
 
-  bool get hasApiKey => _apiKey != null && _apiKey!.trim().isNotEmpty;
+  bool get hasApiKey => apiKey != null && apiKey!.trim().isNotEmpty;
 
   void _handleLogRecord(LogRecord record) {
     final msg = record.message;
@@ -128,20 +162,32 @@ class AntigravityService extends ChangeNotifier {
     String? systemInstructions,
   }) async {
     bool needsRestart = false;
+    final sp = prefs ?? await SharedPreferences.getInstance();
 
-    if (apiKey != null && apiKey != _apiKey) {
-      _apiKey = apiKey.trim().isEmpty ? null : apiKey.trim();
-      needsRestart = true;
+    if (apiKey != null) {
+      final trimmed = apiKey.trim();
+      final newCustomKey = trimmed.isEmpty ? null : trimmed;
+      if (newCustomKey != _customApiKey) {
+        _customApiKey = newCustomKey;
+        if (_customApiKey != null) {
+          await sp.setString(prefKeyApiKey, _customApiKey!);
+        } else {
+          await sp.remove(prefKeyApiKey);
+        }
+        needsRestart = true;
+      }
     }
 
     if (model != null && model != _model) {
       _model = model;
+      await sp.setString(prefKeyModel, _model);
       needsRestart = true;
     }
 
     if (systemInstructions != null &&
         systemInstructions != _systemInstructions) {
       _systemInstructions = systemInstructions;
+      await sp.setString(prefKeyInstructions, _systemInstructions);
       needsRestart = true;
     }
 
@@ -175,7 +221,7 @@ class AntigravityService extends ChangeNotifier {
       }
 
       final config = LocalAgentConfig(
-        apiKey: _apiKey,
+        apiKey: apiKey,
         model: _model,
         systemInstructions: _systemInstructions,
         policies: [allowAll()],

@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'services/antigravity_service.dart';
 import 'ui/chat_screen.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const AntigravityChatApp());
+  final prefs = await SharedPreferences.getInstance();
+  runApp(AntigravityChatApp(prefs: prefs));
 }
 
 /// Root widget for the Antigravity Chat Application.
 class AntigravityChatApp extends StatefulWidget {
-  const AntigravityChatApp({super.key});
+  final SharedPreferences? prefs;
+
+  const AntigravityChatApp({super.key, this.prefs});
 
   @override
   State<AntigravityChatApp> createState() => _AntigravityChatAppState();
@@ -22,7 +26,7 @@ class _AntigravityChatAppState extends State<AntigravityChatApp> {
   @override
   void initState() {
     super.initState();
-    _service = AntigravityService();
+    _service = AntigravityService(prefs: widget.prefs);
   }
 
   @override

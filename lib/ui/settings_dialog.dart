@@ -34,8 +34,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
   @override
   void initState() {
     super.initState();
+    // Only display the manually entered custom key in the editable field
     _apiKeyController = TextEditingController(
-      text: widget.service.apiKey ?? '',
+      text: widget.service.customApiKey ?? '',
     );
     _systemInstructionsController = TextEditingController(
       text: widget.service.systemInstructions,
@@ -98,14 +99,86 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 },
               ),
               const SizedBox(height: 16),
-              Text('Gemini API Key', style: theme.textTheme.labelLarge),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Gemini API Key', style: theme.textTheme.labelLarge),
+                  if (widget.service.isUsingEnvironmentApiKey)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.secondaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.eco,
+                            size: 13,
+                            color: theme.colorScheme.onSecondaryContainer,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Using GEMINI_API_KEY from environment',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: theme.colorScheme.onSecondaryContainer,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (widget.service.customApiKey != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.person,
+                            size: 13,
+                            color: theme.colorScheme.onPrimaryContainer,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Custom key stored',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: theme.colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(height: 6),
               TextField(
                 controller: _apiKeyController,
                 obscureText: _obscureApiKey,
                 decoration: InputDecoration(
                   border: const OutlineInputBorder(),
-                  hintText: 'Leave empty to use GEMINI_API_KEY env var',
+                  hintText: widget.service.environmentApiKey != null
+                      ? 'Environment key active. Enter key here to override.'
+                      : 'Enter custom API key (or set GEMINI_API_KEY env var)',
+                  helperText: widget.service.isUsingEnvironmentApiKey
+                      ? 'Active key is supplied by GEMINI_API_KEY environment variable.'
+                      : (widget.service.customApiKey != null
+                            ? 'Clear this field and save to revert to environment variable.'
+                            : null),
                   isDense: true,
                   suffixIcon: IconButton(
                     icon: Icon(

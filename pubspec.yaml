@@ -37,6 +37,7 @@ dependencies:
   antigravity: ^0.13.0
   flutter_markdown_plus: ^1.0.12
   logging: ^1.3.0
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:
