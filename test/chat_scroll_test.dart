@@ -161,37 +161,37 @@ void main() {
     });
   });
 
-  group('Responsive Layout and Splitter', () {
-    testWidgets(
-      'Wide screen displays inline side panel and draggable splitter',
-      (WidgetTester tester) async {
-        tester.view.physicalSize = const Size(1200, 800);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+  group('Subprocess Trace Slide-out Drawer', () {
+    testWidgets('Wide screen opens trace panel in slide-out drawer on tap', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        final service = AntigravityService();
-        await tester.pumpWidget(
-          MaterialApp(home: ChatScreen(service: service)),
-        );
-        await tester.pumpAndSettle();
+      final service = AntigravityService();
+      await tester.pumpWidget(MaterialApp(home: ChatScreen(service: service)));
+      await tester.pumpAndSettle();
 
-        // Inline ProcessLogPanel should be visible
-        expect(find.byType(ProcessLogPanel), findsOneWidget);
-        // MouseRegion for splitter with resizeColumn cursor should exist
-        expect(
-          find.byWidgetPredicate(
-            (w) =>
-                w is MouseRegion && w.cursor == SystemMouseCursors.resizeColumn,
-          ),
-          findsOneWidget,
-        );
+      // Drawer is closed initially, main chat is full width
+      expect(find.byType(Drawer), findsNothing);
+      expect(find.byType(ProcessLogPanel), findsNothing);
 
-        service.dispose();
-      },
-    );
+      // Tap terminal button to open drawer
+      final traceBtn = find.byTooltip('Subprocess trace');
+      expect(traceBtn, findsOneWidget);
+      await tester.tap(traceBtn);
+      await tester.pumpAndSettle();
 
-    testWidgets('Compact screen hides inline panel and opens drawer on tap', (
+      // Trace panel rendered inside slide-out Drawer
+      expect(find.byType(Drawer), findsOneWidget);
+      expect(find.byType(ProcessLogPanel), findsOneWidget);
+
+      service.dispose();
+    });
+
+    testWidgets('Compact screen opens trace panel in slide-out drawer on tap', (
       WidgetTester tester,
     ) async {
       tester.view.physicalSize = const Size(600, 800);
@@ -203,16 +203,17 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: ChatScreen(service: service)));
       await tester.pumpAndSettle();
 
-      // Inline ProcessLogPanel should NOT be visible
+      // Drawer is closed initially
+      expect(find.byType(Drawer), findsNothing);
       expect(find.byType(ProcessLogPanel), findsNothing);
 
       // Tap the terminal action button to open end drawer
-      final traceBtn = find.byTooltip('Open subprocess trace');
+      final traceBtn = find.byTooltip('Subprocess trace');
       expect(traceBtn, findsOneWidget);
       await tester.tap(traceBtn);
       await tester.pumpAndSettle();
 
-      // Now ProcessLogPanel should be rendered inside the Drawer
+      // Now ProcessLogPanel is rendered inside the Drawer
       expect(find.byType(Drawer), findsOneWidget);
       expect(find.byType(ProcessLogPanel), findsOneWidget);
 

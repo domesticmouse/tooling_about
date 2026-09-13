@@ -246,16 +246,19 @@ class _ProcessLogPanelState extends State<ProcessLogPanel>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  children: [
-                    _buildFilterChip('All', 'all', colorScheme),
-                    const SizedBox(width: 6),
-                    _buildFilterChip('In (<<<)', 'in', colorScheme),
-                    const SizedBox(width: 6),
-                    _buildFilterChip('Out (>>>)', 'out', colorScheme),
-                    const SizedBox(width: 6),
-                    _buildFilterChip('Errors', 'error', colorScheme),
-                  ],
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildFilterChip('All', 'all', colorScheme),
+                      const SizedBox(width: 6),
+                      _buildFilterChip('In (<<<)', 'in', colorScheme),
+                      const SizedBox(width: 6),
+                      _buildFilterChip('Out (>>>)', 'out', colorScheme),
+                      const SizedBox(width: 6),
+                      _buildFilterChip('Errors', 'error', colorScheme),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 6),
                 SizedBox(
