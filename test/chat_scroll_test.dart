@@ -124,4 +124,39 @@ void main() {
       },
     );
   });
+
+  group('AntigravityService Log Queue and Decoupling', () {
+    test('logNotifier notifies when logs are added and cleared', () {
+      final service = AntigravityService();
+      int notifyCount = 0;
+      service.logNotifier.addListener(() {
+        notifyCount++;
+      });
+
+      service.addLog('Test entry 1', direction: LogDirection.inbound);
+      service.addLog('Test entry 2', direction: LogDirection.outbound);
+      expect(notifyCount, 2);
+
+      service.clearLogs();
+      expect(notifyCount, 3);
+      expect(service.processLogs, isEmpty);
+
+      service.dispose();
+    });
+
+    test('Log buffer caps at 1500 with O(1) FIFO truncation', () {
+      final service = AntigravityService();
+
+      for (int i = 0; i < 1600; i++) {
+        service.addLog('Message $i', direction: LogDirection.system);
+      }
+
+      // Buffer cap is 1500 entries (indices 100 through 1599)
+      expect(service.processLogs.length, 1500);
+      expect(service.processLogs.first.message, 'Message 100');
+      expect(service.processLogs.last.message, 'Message 1599');
+
+      service.dispose();
+    });
+  });
 }

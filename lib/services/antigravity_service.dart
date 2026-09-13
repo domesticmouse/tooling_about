@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io';
 
 import 'package:antigravity/antigravity.dart';
@@ -23,7 +24,8 @@ class AntigravityService extends ChangeNotifier {
   bool _isGenerating = false;
   String? _lastError;
 
-  final List<ProcessLogEntry> _processLogs = [];
+  final ListQueue<ProcessLogEntry> _processLogs = ListQueue<ProcessLogEntry>();
+  final ValueNotifier<int> _logNotifier = ValueNotifier<int>(0);
   StreamSubscription<LogRecord>? _logSubscription;
 
   AntigravityService() {
@@ -53,6 +55,7 @@ class AntigravityService extends ChangeNotifier {
   bool get isReady => _agent != null && !_isInitializing;
   String? get lastError => _lastError;
   List<ProcessLogEntry> get processLogs => List.unmodifiable(_processLogs);
+  ValueListenable<int> get logNotifier => _logNotifier;
 
   bool get hasApiKey => _apiKey != null && _apiKey!.trim().isNotEmpty;
 
@@ -106,16 +109,16 @@ class AntigravityService extends ChangeNotifier {
 
   void _addLogEntry(ProcessLogEntry entry) {
     _processLogs.add(entry);
-    // Keep max 1500 log entries to manage memory
+    // Keep max 1500 log entries to manage memory with O(1) removals
     if (_processLogs.length > 1500) {
-      _processLogs.removeAt(0);
+      _processLogs.removeFirst();
     }
-    notifyListeners();
+    _logNotifier.value++;
   }
 
   void clearLogs() {
     _processLogs.clear();
-    notifyListeners();
+    _logNotifier.value++;
   }
 
   /// Updates settings and recreates the agent session if needed.
@@ -335,6 +338,7 @@ class AntigravityService extends ChangeNotifier {
     _logSubscription?.cancel();
     _activeResponse?.cancel();
     _agent?.stop();
+    _logNotifier.dispose();
     super.dispose();
   }
 }

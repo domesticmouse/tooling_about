@@ -34,20 +34,23 @@ class _ProcessLogPanelState extends State<ProcessLogPanel>
   void initState() {
     super.initState();
     _scrollTicker = createTicker(_onScrollTick);
-    widget.service.addListener(_onLogsUpdated);
+    widget.service.logNotifier.addListener(_onLogsUpdated);
   }
 
   @override
   void dispose() {
-    widget.service.removeListener(_onLogsUpdated);
+    widget.service.logNotifier.removeListener(_onLogsUpdated);
     _scrollTicker.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   void _onLogsUpdated() {
-    if (_autoScroll) {
-      _startScrollTicker();
+    if (mounted) {
+      setState(() {});
+      if (_autoScroll) {
+        _startScrollTicker();
+      }
     }
   }
 
