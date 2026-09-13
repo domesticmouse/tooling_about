@@ -10,6 +10,7 @@ import 'package:genui/genui.dart' as genui show ChatMessage;
 import 'package:logging/logging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/chat_message.dart';
 import '../models/process_log_entry.dart';
 import '../ui/genui/multiple_choice_question_item.dart';
 
@@ -20,6 +21,7 @@ class AntigravityService extends ChangeNotifier {
   static const String prefKeyApiKey = 'antigravity_api_key';
   static const String prefKeyModel = 'antigravity_model';
   static const String prefKeyInstructions = 'antigravity_system_instructions';
+  static const String prefKeyChatHistory = 'antigravity_chat_history';
 
   final SharedPreferences? prefs;
 
@@ -440,10 +442,84 @@ When asking the user a multiple-choice question, clarifying requirements, or off
     }
   }
 
+  /// Loads persisted conversation turns from SharedPreferences.
+  List<ChatMessage> loadPersistedMessages() {
+    final raw = prefs?.getString(prefKeyChatHistory);
+    if (raw == null || raw.trim().isEmpty) return <ChatMessage>[];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded
+            .map(
+              (item) =>
+                  ChatMessage.fromJson(Map<String, dynamic>.from(item as Map)),
+            )
+            .toList();
+      }
+    } catch (e) {
+      addLog(
+        'Error loading persisted chat history: $e',
+        direction: LogDirection.error,
+      );
+    }
+    return <ChatMessage>[];
+  }
+
+  /// Persists the active list of conversation turns to SharedPreferences.
+  Future<void> persistMessages(List<ChatMessage> messages) async {
+    final sp = prefs ?? await SharedPreferences.getInstance();
+    try {
+      final encoded = jsonEncode(messages.map((m) => m.toJson()).toList());
+      await sp.setString(prefKeyChatHistory, encoded);
+    } catch (e) {
+      addLog(
+        'Error persisting chat history: $e',
+        direction: LogDirection.error,
+      );
+    }
+  }
+
+  /// Purges persisted conversation history from SharedPreferences.
+  Future<void> clearPersistedMessages() async {
+    final sp = prefs ?? await SharedPreferences.getInstance();
+    try {
+      await sp.remove(prefKeyChatHistory);
+    } catch (e) {
+      addLog(
+        'Error clearing persisted chat history: $e',
+        direction: LogDirection.error,
+      );
+    }
+  }
+
+  /// Exports the given list of messages into a structured Markdown document.
+  String exportConversationMarkdown(List<ChatMessage> messages) {
+    final buffer = StringBuffer();
+    final now = DateTime.now();
+    final dateStr =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+
+    buffer.writeln('# Antigravity Chat Export');
+    buffer.writeln('- **Export Date**: $dateStr');
+    buffer.writeln('- **Model**: $_model');
+    buffer.writeln('- **Total Messages**: ${messages.length}');
+    buffer.writeln('\n---\n');
+
+    for (int i = 0; i < messages.length; i++) {
+      buffer.write(messages[i].toMarkdown());
+      if (i < messages.length - 1) {
+        buffer.writeln('\n---\n');
+      }
+    }
+
+    return buffer.toString();
+  }
+
   /// Clears the session and starts a clean conversation.
   Future<void> clearSession() async {
     addLog('Clearing conversation session.', direction: LogDirection.system);
     await cancelGeneration();
+    await clearPersistedMessages();
     _resetGenUi();
     await restartAgent();
   }

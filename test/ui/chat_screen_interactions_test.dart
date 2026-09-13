@@ -372,5 +372,79 @@ void main() {
       expect(find.text('Network error'), findsNothing);
       expect(service.lastError, isNull);
     });
+
+    testWidgets(
+      'loads and displays persisted messages on startup when initialMessages is null',
+      (tester) async {
+        final service = AntigravityService(prefs: prefs);
+        await service.persistMessages([
+          ChatMessage(
+            id: 'persisted-1',
+            role: MessageRole.user,
+            content: 'Persisted User Question',
+          ),
+          ChatMessage(
+            id: 'persisted-2',
+            role: MessageRole.assistant,
+            content: 'Persisted Assistant Answer',
+          ),
+        ]);
+
+        await tester.pumpWidget(buildChatApp(service: service));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Persisted User Question'), findsOneWidget);
+        expect(find.text('Persisted Assistant Answer'), findsOneWidget);
+        expect(find.text('Welcome to Antigravity'), findsNothing);
+
+        service.dispose();
+      },
+    );
+
+    testWidgets(
+      'export conversation button opens export preview dialog and copies markdown',
+      (tester) async {
+        final service = AntigravityService(prefs: prefs);
+        final initialMessages = [
+          ChatMessage(
+            id: 'm-1',
+            role: MessageRole.user,
+            content: 'Export test user message',
+          ),
+          ChatMessage(
+            id: 'm-2',
+            role: MessageRole.assistant,
+            content: 'Export test assistant response',
+          ),
+        ];
+
+        await tester.pumpWidget(
+          buildChatApp(service: service, initialMessages: initialMessages),
+        );
+        await tester.pumpAndSettle();
+
+        final exportButtonFinder = find.byTooltip('Export conversation');
+        expect(exportButtonFinder, findsOneWidget);
+
+        await tester.tap(exportButtonFinder);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Export Conversation'), findsOneWidget);
+        expect(find.text('Copy Markdown'), findsOneWidget);
+
+        // Tap Copy Markdown
+        await tester.tap(find.text('Copy Markdown'));
+        await tester.pumpAndSettle();
+
+        // Verify dialog dismissed and SnackBar shown
+        expect(find.text('Export Conversation'), findsNothing);
+        expect(
+          find.text('Conversation copied to clipboard as Markdown'),
+          findsOneWidget,
+        );
+
+        service.dispose();
+      },
+    );
   });
 }

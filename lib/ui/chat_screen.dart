@@ -40,7 +40,7 @@ class _ChatScreenState extends State<ChatScreen>
     super.initState();
     _messages = widget.initialMessages != null
         ? List<ChatMessage>.from(widget.initialMessages!)
-        : <ChatMessage>[];
+        : widget.service.loadPersistedMessages();
     _scrollTicker = createTicker(_onScrollTick);
     widget.service.addListener(_onServiceChanged);
     widget.service.onUiActionSubmitted = _onUiActionSubmitted;
@@ -153,6 +153,7 @@ class _ChatScreenState extends State<ChatScreen>
       _messages.add(botMsg);
       _userScrolledUp = false;
     });
+    widget.service.persistMessages(_messages);
     _startScrollTicker();
 
     await widget.service.sendMessage(
@@ -164,6 +165,7 @@ class _ChatScreenState extends State<ChatScreen>
             botMsg.surfaceIds.add(surfaceId);
           }
         });
+        widget.service.persistMessages(_messages);
         _requestScrollFollow();
       },
       onToken: (token) {
@@ -188,6 +190,7 @@ class _ChatScreenState extends State<ChatScreen>
           botMsg.isThinking = false;
           botMsg.error = err;
         });
+        widget.service.persistMessages(_messages);
         _requestScrollFollow();
       },
       onDone: () {
@@ -196,6 +199,7 @@ class _ChatScreenState extends State<ChatScreen>
           botMsg.isStreaming = false;
           botMsg.isThinking = false;
         });
+        widget.service.persistMessages(_messages);
         _requestScrollFollow();
       },
     );
@@ -229,6 +233,14 @@ class _ChatScreenState extends State<ChatScreen>
       _userScrolledUp = false;
     });
     widget.service.clearSession();
+  }
+
+  void _exportConversation() {
+    final markdown = widget.service.exportConversationMarkdown(_messages);
+    showDialog(
+      context: context,
+      builder: (ctx) => _ExportDialog(markdown: markdown),
+    );
   }
 
   @override
@@ -295,6 +307,11 @@ class _ChatScreenState extends State<ChatScreen>
                 _scaffoldKey.currentState?.openEndDrawer();
               }
             },
+          ),
+          IconButton(
+            tooltip: 'Export conversation',
+            icon: const Icon(Icons.file_download_outlined),
+            onPressed: _messages.isEmpty ? null : _exportConversation,
           ),
           IconButton(
             tooltip: 'Clear conversation',
@@ -933,6 +950,87 @@ class _MessageBubbleState extends State<_MessageBubble> {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _ExportDialog extends StatelessWidget {
+  final String markdown;
+
+  const _ExportDialog({required this.markdown});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.description_outlined),
+          SizedBox(width: 8),
+          Text('Export Conversation'),
+        ],
+      ),
+      content: SizedBox(
+        width: 540,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Preview formatted Markdown conversation:',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              constraints: const BoxConstraints(maxHeight: 340),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.5,
+                ),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                ),
+              ),
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  markdown,
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+        FilledButton.icon(
+          icon: const Icon(Icons.copy, size: 16),
+          label: const Text('Copy Markdown'),
+          onPressed: () {
+            Clipboard.setData(ClipboardData(text: markdown));
+            Navigator.of(context).pop();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Conversation copied to clipboard as Markdown'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 }

@@ -43,4 +43,67 @@ class ChatMessage {
     );
     return content.replaceAll(a2uiRegex, '').trim();
   }
+
+  /// Converts this message to a JSON map suitable for persistence.
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'role': role.name,
+    'content': content,
+    'thoughts': thoughts,
+    'error': error,
+    'timestamp': timestamp.toIso8601String(),
+    'surfaceIds': surfaceIds,
+  };
+
+  /// Constructs a [ChatMessage] from a JSON map.
+  factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    return ChatMessage(
+      id: json['id'] as String,
+      role: MessageRole.values.byName(json['role'] as String),
+      content: (json['content'] as String?) ?? '',
+      thoughts: json['thoughts'] as String?,
+      error: json['error'] as String?,
+      timestamp: json['timestamp'] != null
+          ? DateTime.tryParse(json['timestamp'] as String) ?? DateTime.now()
+          : DateTime.now(),
+      surfaceIds: (json['surfaceIds'] as List?)
+          ?.map((e) => e.toString())
+          .toList(),
+      isStreaming: false,
+      isThinking: false,
+    );
+  }
+
+  /// Formats this message into Markdown with role header, timestamp, and optional thinking trace.
+  String toMarkdown() {
+    final buffer = StringBuffer();
+    final roleName = isUser
+        ? 'User'
+        : isAssistant
+        ? 'Assistant'
+        : 'System';
+    final timeStr =
+        '${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}:${timestamp.second.toString().padLeft(2, '0')}';
+
+    buffer.writeln('### $roleName ($timeStr)\n');
+
+    if (hasThoughts) {
+      buffer.writeln('> **Thinking Process:**');
+      for (final line in thoughts!.trim().split('\n')) {
+        buffer.writeln('> $line');
+      }
+      buffer.writeln();
+    }
+
+    final text = displayContent.trim();
+    if (text.isNotEmpty) {
+      buffer.writeln(text);
+    }
+
+    if (error != null && error!.isNotEmpty) {
+      buffer.writeln('\n**Error:** `$error`');
+    }
+
+    return buffer.toString();
+  }
 }

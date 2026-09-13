@@ -126,6 +126,71 @@ Feel free to submit!
         'Here is the interactive form:\n\nFeel free to submit!',
       );
     });
+
+    test('toJson and fromJson serialize and deserialize correctly', () {
+      final timestamp = DateTime(2026, 9, 14, 9, 30, 0);
+      final original = ChatMessage(
+        id: 'msg-roundtrip',
+        role: MessageRole.assistant,
+        content: 'Response content',
+        thoughts: 'Step 1: Compute',
+        error: 'Sample error',
+        timestamp: timestamp,
+        surfaceIds: ['surface_1', 'surface_2'],
+        isStreaming: true,
+        isThinking: true,
+      );
+
+      final json = original.toJson();
+      expect(json['id'], 'msg-roundtrip');
+      expect(json['role'], 'assistant');
+      expect(json['content'], 'Response content');
+      expect(json['thoughts'], 'Step 1: Compute');
+      expect(json['error'], 'Sample error');
+      expect(json['timestamp'], timestamp.toIso8601String());
+      expect(json['surfaceIds'], ['surface_1', 'surface_2']);
+
+      final restored = ChatMessage.fromJson(json);
+      expect(restored.id, original.id);
+      expect(restored.role, original.role);
+      expect(restored.content, original.content);
+      expect(restored.thoughts, original.thoughts);
+      expect(restored.error, original.error);
+      expect(restored.timestamp, original.timestamp);
+      expect(restored.surfaceIds, original.surfaceIds);
+      // Transient states must be reset to false
+      expect(restored.isStreaming, isFalse);
+      expect(restored.isThinking, isFalse);
+    });
+
+    test('toMarkdown formats message into readable Markdown', () {
+      final timestamp = DateTime(2026, 9, 14, 14, 5, 9);
+      final userMsg = ChatMessage(
+        id: 'user-1',
+        role: MessageRole.user,
+        content: 'Hello Antigravity',
+        timestamp: timestamp,
+      );
+      final userMd = userMsg.toMarkdown();
+      expect(userMd, contains('### User (14:05:09)'));
+      expect(userMd, contains('Hello Antigravity'));
+
+      final botMsg = ChatMessage(
+        id: 'bot-1',
+        role: MessageRole.assistant,
+        content: 'Here is your answer',
+        thoughts: 'Reasoning line 1\nReasoning line 2',
+        error: 'Partial failure',
+        timestamp: timestamp,
+      );
+      final botMd = botMsg.toMarkdown();
+      expect(botMd, contains('### Assistant (14:05:09)'));
+      expect(botMd, contains('> **Thinking Process:**'));
+      expect(botMd, contains('> Reasoning line 1'));
+      expect(botMd, contains('> Reasoning line 2'));
+      expect(botMd, contains('Here is your answer'));
+      expect(botMd, contains('**Error:** `Partial failure`'));
+    });
   });
 
   group('ProcessLogEntry', () {
