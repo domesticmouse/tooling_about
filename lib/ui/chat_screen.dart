@@ -480,13 +480,37 @@ class _MessageBubbleState extends State<_MessageBubble> {
                             ),
                           ),
                         ),
-                        child: SelectableText(
-                          widget.message.thoughts!,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontStyle: FontStyle.italic,
-                            color: colorScheme.onSurfaceVariant,
-                            fontFamily: 'monospace',
+                        child: MarkdownBody(
+                          data: widget.message.thoughts!,
+                          selectable: true,
+                          styleSheet:
+                              MarkdownStyleSheet.fromTheme(theme).copyWith(
+                            p: TextStyle(
+                              fontSize: 12,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            em: TextStyle(
+                              fontSize: 12,
+                              fontStyle: FontStyle.italic,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            strong: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: colorScheme.onSurface,
+                            ),
+                            code: TextStyle(
+                              backgroundColor: colorScheme
+                                  .surfaceContainerHighest
+                                  .withValues(alpha: 0.7),
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                            ),
+                            codeblockDecoration: BoxDecoration(
+                              color: colorScheme.surfaceContainerHighest
+                                  .withValues(alpha: 0.6),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
                           ),
                         ),
                       ),
