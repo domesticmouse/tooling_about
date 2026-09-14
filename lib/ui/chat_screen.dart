@@ -38,9 +38,12 @@ class _ChatScreenState extends State<ChatScreen>
   @override
   void initState() {
     super.initState();
-    _messages = widget.initialMessages != null
-        ? List<ChatMessage>.from(widget.initialMessages!)
-        : widget.service.loadPersistedMessages();
+    if (widget.initialMessages != null) {
+      _messages = List<ChatMessage>.from(widget.initialMessages!);
+      widget.service.restoreGenUiSurfaces(_messages);
+    } else {
+      _messages = widget.service.loadPersistedMessages();
+    }
     _scrollTicker = createTicker(_onScrollTick);
     widget.service.addListener(_onServiceChanged);
     widget.service.onUiActionSubmitted = _onUiActionSubmitted;

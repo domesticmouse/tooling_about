@@ -573,19 +573,37 @@ When asking the user for a rating, satisfaction score, or review of a response o
     }
   }
 
-  /// Loads persisted conversation turns from SharedPreferences.
+  /// Restores GenUI surfaces into [SurfaceController] by replaying A2UI markup
+  /// from historical conversation messages into the [transport] adapter.
+  void restoreGenUiSurfaces(List<ChatMessage> messages) {
+    for (final message in messages) {
+      if (message.hasSurfaces && message.content.isNotEmpty) {
+        _transport.addChunk(message.content);
+        _transport.addChunk('\n\n');
+        addLog(
+          'Restored GenUI surfaces for message "${message.id}".',
+          direction: LogDirection.system,
+        );
+      }
+    }
+  }
+
+  /// Loads persisted conversation turns from SharedPreferences and restores any
+  /// associated GenUI dynamic surfaces into [SurfaceController].
   List<ChatMessage> loadPersistedMessages() {
     final raw = prefs?.getString(prefKeyChatHistory);
     if (raw == null || raw.trim().isEmpty) return <ChatMessage>[];
     try {
       final decoded = jsonDecode(raw);
       if (decoded is List) {
-        return decoded
+        final messages = decoded
             .map(
               (item) =>
                   ChatMessage.fromJson(Map<String, dynamic>.from(item as Map)),
             )
             .toList();
+        restoreGenUiSurfaces(messages);
+        return messages;
       }
     } catch (e) {
       addLog(
