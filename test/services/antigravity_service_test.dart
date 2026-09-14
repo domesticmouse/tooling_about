@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tooling_about/models/chat_message.dart';
 import 'package:tooling_about/models/process_log_entry.dart';
 import 'package:tooling_about/services/antigravity_service.dart';
+import 'package:tooling_about/services/secure_key_store.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -215,6 +216,72 @@ void main() {
       expect(markdown, contains('### Assistant (10:00:05)'));
       expect(markdown, contains('> **Thinking Process:**'));
       expect(markdown, contains('It is an AI agent orchestrator.'));
+
+      service.dispose();
+    });
+
+    test(
+      'SecureKeyStore InMemoryKeyStore operations (read, write, delete)',
+      () async {
+        final store = InMemoryKeyStore({'key1': 'value1'});
+        expect(await store.read('key1'), 'value1');
+        expect(await store.read('unknown'), isNull);
+
+        await store.write('key2', 'value2');
+        expect(await store.read('key2'), 'value2');
+
+        await store.delete('key1');
+        expect(await store.read('key1'), isNull);
+      },
+    );
+
+    test('setCustomApiKey saves key securely and purges SharedPreferences plaintext', () async {
+      final keyStore = InMemoryKeyStore();
+      final service = AntigravityService(prefs: prefs, secureStorage: keyStore);
+
+      await service.setCustomApiKey('secure-test-key-999');
+      expect(service.customApiKey, 'secure-test-key-999');
+      expect(
+        await keyStore.read(AntigravityService.secureKeyApiKey),
+        'secure-test-key-999',
+      );
+      expect(prefs.getString(AntigravityService.prefKeyApiKey), isNull);
+
+      // Clear key
+      await service.setCustomApiKey(null);
+      expect(service.customApiKey, isNull);
+      expect(await keyStore.read(AntigravityService.secureKeyApiKey), isNull);
+      expect(prefs.getString(AntigravityService.prefKeyApiKey), isNull);
+
+      service.dispose();
+    });
+
+    test('automatically migrates legacy plaintext API key from SharedPreferences to SecureKeyStore', () async {
+      // 1. Pre-populate SharedPreferences with legacy plaintext key
+      await prefs.setString(
+        AntigravityService.prefKeyApiKey,
+        'legacy-plaintext-key-123',
+      );
+      expect(
+        prefs.getString(AntigravityService.prefKeyApiKey),
+        'legacy-plaintext-key-123',
+      );
+
+      final keyStore = InMemoryKeyStore();
+      final service = AntigravityService(prefs: prefs, secureStorage: keyStore);
+
+      // Wait for secure initialization and migration to complete
+      await service.secureStorageInitFuture;
+
+      // 2. Verify key is now in secure store
+      expect(
+        await keyStore.read(AntigravityService.secureKeyApiKey),
+        'legacy-plaintext-key-123',
+      );
+      expect(service.customApiKey, 'legacy-plaintext-key-123');
+
+      // 3. Verify legacy plaintext key was deleted from SharedPreferences
+      expect(prefs.getString(AntigravityService.prefKeyApiKey), isNull);
 
       service.dispose();
     });

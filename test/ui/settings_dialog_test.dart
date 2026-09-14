@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tooling_about/services/antigravity_service.dart';
+import 'package:tooling_about/services/secure_key_store.dart';
 import 'package:tooling_about/ui/settings_dialog.dart';
 
 void main() {
@@ -201,14 +202,44 @@ void main() {
           'gemini-2.5-pro',
         );
         expect(
-          prefs.getString(AntigravityService.prefKeyApiKey),
+          await service.secureStorage.read(AntigravityService.secureKeyApiKey),
           'new-saved-api-key',
         );
+        expect(prefs.getString(AntigravityService.prefKeyApiKey), isNull);
         expect(
           prefs.getString(AntigravityService.prefKeyInstructions),
           'You are an advanced Flutter architect.',
         );
       },
     );
+
+    testWidgets('clearing API key in dialog removes it from secure storage', (
+      tester,
+    ) async {
+      final keyStore = InMemoryKeyStore({
+        AntigravityService.secureKeyApiKey: 'existing-key',
+      });
+      final service = AntigravityService(prefs: prefs, secureStorage: keyStore);
+      await service.secureStorageInitFuture;
+      expect(service.customApiKey, 'existing-key');
+
+      await tester.pumpWidget(createSettingsApp(service: service));
+      await tester.tap(find.text('Open Settings'));
+      await tester.pumpAndSettle();
+
+      final apiKeyFinder = find.byWidgetPredicate(
+        (w) => w is TextField && w.decoration?.suffixIcon != null,
+      );
+      await tester.enterText(apiKeyFinder, '');
+      await tester.tap(find.text('Save & Apply'));
+      await tester.pumpAndSettle();
+
+      expect(service.customApiKey, isNull);
+      expect(
+        await service.secureStorage.read(AntigravityService.secureKeyApiKey),
+        isNull,
+      );
+      expect(prefs.getString(AntigravityService.prefKeyApiKey), isNull);
+    });
   });
 }

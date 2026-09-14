@@ -265,12 +265,17 @@ void main() {
           'Helpful expert',
         );
         expect(
-          prefs.getString(AntigravityService.prefKeyApiKey),
+          await service.secureStorage.read(AntigravityService.secureKeyApiKey),
           'new-key-123',
         );
+        expect(prefs.getString(AntigravityService.prefKeyApiKey), isNull);
 
         // Removing API key
         await service.updateSettings(apiKey: '');
+        expect(
+          await service.secureStorage.read(AntigravityService.secureKeyApiKey),
+          isNull,
+        );
         expect(prefs.getString(AntigravityService.prefKeyApiKey), isNull);
         expect(service.customApiKey, isNull);
 
@@ -300,13 +305,18 @@ void main() {
         expect(service.apiKey, 'custom-override-key');
         expect(service.isUsingEnvironmentApiKey, isFalse);
         expect(
-          prefs.getString(AntigravityService.prefKeyApiKey),
+          await service.secureStorage.read(AntigravityService.secureKeyApiKey),
           'custom-override-key',
         );
+        expect(prefs.getString(AntigravityService.prefKeyApiKey), isNull);
 
         // Clear manual key
         await service.updateSettings(apiKey: '');
         expect(service.customApiKey, isNull);
+        expect(
+          await service.secureStorage.read(AntigravityService.secureKeyApiKey),
+          isNull,
+        );
         expect(prefs.getString(AntigravityService.prefKeyApiKey), isNull);
         if (service.environmentApiKey != null) {
           expect(service.isUsingEnvironmentApiKey, isTrue);

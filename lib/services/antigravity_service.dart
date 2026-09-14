@@ -13,17 +13,39 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/chat_message.dart';
 import '../models/process_log_entry.dart';
 import '../ui/genui/multiple_choice_question_item.dart';
+import 'secure_key_store.dart';
 
 /// Service managing the lifecycle of the Google Antigravity [Agent],
 /// generative UI via [Conversation] / [SurfaceController], and capturing a trace
 /// of all subprocess communication.
 class AntigravityService extends ChangeNotifier {
+  /// Secure storage key used for encrypting and storing Gemini API key.
+  static const String secureKeyApiKey = 'gemini_api_key';
+
+  /// Legacy SharedPreferences key used for API keys. Kept for migration to secure storage.
   static const String prefKeyApiKey = 'antigravity_api_key';
   static const String prefKeyModel = 'antigravity_model';
   static const String prefKeyInstructions = 'antigravity_system_instructions';
   static const String prefKeyChatHistory = 'antigravity_chat_history';
 
+  static SecureKeyStore _createDefaultStore() {
+    try {
+      if (Platform.environment.containsKey('FLUTTER_TEST')) {
+        return InMemoryKeyStore();
+      }
+    } catch (_) {}
+    return FlutterSecureKeyStore();
+  }
+
+  /// The default [SecureKeyStore] used when none is explicitly provided.
+  /// Defaults to [InMemoryKeyStore] in test runners and [FlutterSecureKeyStore] in production.
+  static SecureKeyStore defaultKeyStore = _createDefaultStore();
+
   final SharedPreferences? prefs;
+  final SecureKeyStore _secureStorage;
+
+  bool _isDisposed = false;
+  bool get isDisposed => _isDisposed;
 
   Agent? _agent;
   ChatResponse? _activeResponse;
@@ -53,7 +75,11 @@ class AntigravityService extends ChangeNotifier {
   void Function(String surfaceId)? _activeSurfaceCallback;
   void Function(String actionPrompt)? onUiActionSubmitted;
 
-  AntigravityService({this.prefs, String? environmentApiKey}) {
+  AntigravityService({
+    this.prefs,
+    SecureKeyStore? secureStorage,
+    String? environmentApiKey,
+  }) : _secureStorage = secureStorage ?? defaultKeyStore {
     // Enable fine-grained logging across the Dart logging hierarchy
     Logger.root.level = Level.ALL;
     _logSubscription = Logger.root.onRecord.listen(_handleLogRecord);
@@ -66,6 +92,12 @@ class AntigravityService extends ChangeNotifier {
       direction: LogDirection.system,
     );
   }
+
+  Future<void>? _secureInitFuture;
+
+  /// Future that completes when secure storage loading and legacy migration finish.
+  Future<void> get secureStorageInitFuture =>
+      _secureInitFuture ?? Future.value();
 
   void _initSettings({String? environmentApiKey}) {
     // 1. Model
@@ -92,13 +124,48 @@ class AntigravityService extends ChangeNotifier {
       } catch (_) {}
     }
 
-    // 4. Manually entered API Key from preferences
+    // 4. Manually entered API Key from legacy preferences (synchronous fallback for migration)
     final savedApiKey = prefs?.getString(prefKeyApiKey);
     if (savedApiKey != null && savedApiKey.trim().isNotEmpty) {
       _customApiKey = savedApiKey.trim();
     }
+
+    // 5. Asynchronously load from secure storage and migrate legacy key
+    _secureInitFuture = loadSecureApiKey();
   }
 
+  /// Loads the API key from [SecureKeyStore] and migrates any legacy plaintext key
+  /// from [SharedPreferences] into [SecureKeyStore].
+  Future<void> loadSecureApiKey() async {
+    try {
+      final secureKey = await _secureStorage.read(secureKeyApiKey);
+      if (secureKey != null && secureKey.trim().isNotEmpty) {
+        _customApiKey = secureKey.trim();
+      }
+
+      // Check for legacy plaintext key in SharedPreferences
+      final legacyApiKey = prefs?.getString(prefKeyApiKey);
+      if (legacyApiKey != null && legacyApiKey.trim().isNotEmpty) {
+        if (secureKey == null || secureKey.trim().isEmpty) {
+          _customApiKey = legacyApiKey.trim();
+          await _secureStorage.write(secureKeyApiKey, _customApiKey!);
+        }
+        // Remove legacy plaintext key to avoid exposure
+        await prefs?.remove(prefKeyApiKey);
+      }
+      if (_isDisposed) return;
+      notifyListeners();
+    } catch (e) {
+      if (!_isDisposed) {
+        addLog(
+          'Failed to load secure API key: $e',
+          direction: LogDirection.error,
+        );
+      }
+    }
+  }
+
+  SecureKeyStore get secureStorage => _secureStorage;
   String get model => _model;
   String? get customApiKey => _customApiKey;
   String? get environmentApiKey => _environmentApiKey;
@@ -291,7 +358,14 @@ When asking the user a multiple-choice question, clarifying requirements, or off
     );
   }
 
+  @override
+  void notifyListeners() {
+    if (_isDisposed) return;
+    super.notifyListeners();
+  }
+
   void addLogEntry(ProcessLogEntry entry) {
+    if (_isDisposed) return;
     _processLogs.add(entry);
     // Keep max 1500 log entries to manage memory with O(1) removals
     if (_processLogs.length > 1500) {
@@ -301,6 +375,7 @@ When asking the user a multiple-choice question, clarifying requirements, or off
   }
 
   void clearLogs() {
+    if (_isDisposed) return;
     _processLogs.clear();
     _logNotifier.value++;
   }
@@ -320,10 +395,12 @@ When asking the user a multiple-choice question, clarifying requirements, or off
       if (newCustomKey != _customApiKey) {
         _customApiKey = newCustomKey;
         if (_customApiKey != null) {
-          await sp.setString(prefKeyApiKey, _customApiKey!);
+          await _secureStorage.write(secureKeyApiKey, _customApiKey!);
         } else {
-          await sp.remove(prefKeyApiKey);
+          await _secureStorage.delete(secureKeyApiKey);
         }
+        // Ensure legacy SharedPreferences key is removed to avoid plaintext residue
+        await sp.remove(prefKeyApiKey);
         needsRestart = true;
       }
     }
@@ -346,6 +423,11 @@ When asking the user a multiple-choice question, clarifying requirements, or off
     if (needsRestart) {
       await restartAgent();
     }
+  }
+
+  /// Sets or clears the custom API key stored securely.
+  Future<void> setCustomApiKey(String? key) async {
+    await updateSettings(apiKey: key ?? '');
   }
 
   /// Starts or restarts the [Agent] session.
@@ -621,6 +703,7 @@ When asking the user a multiple-choice question, clarifying requirements, or off
 
   @override
   void dispose() {
+    _isDisposed = true;
     if (_generationCompleter != null && !_generationCompleter!.isCompleted) {
       _generationCompleter!.completeError(
         AntigravityCancelledException('Service disposed.'),
