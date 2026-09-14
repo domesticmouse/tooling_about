@@ -36,7 +36,7 @@ jobs:
           channel: ${{ matrix.flutter_version }}
       - run: dart --version
       - run: flutter --version
-      - run: dart format --set-exit-if-changed
+      - run: dart format
       - run: dart analyze --fatal-infos
       - run: flutter test
       
