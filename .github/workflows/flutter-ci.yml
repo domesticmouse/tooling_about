@@ -1,0 +1,42 @@
+name: Flutter CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *" # Every day at midnight
+
+defaults:
+  run:
+    shell: bash
+
+# Declare default permissions as read only.
+permissions: read-all
+
+jobs:
+  test:
+    name: Test Flutter ${{ matrix.flutter_version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        flutter_version: [stable, beta]
+        os: [macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: "zulu" # See https://github.com/actions/setup-java#supported-distributions
+          java-version: "17"
+      - uses: subosito/flutter-action@v2.23
+        with:
+          channel: ${{ matrix.flutter_version }}
+      - run: dart --version
+      - run: flutter --version
+      - run: dart format --set-exit-if-changed
+      - run: dart analyze --fatal-infos
+      - run: flutter test
+      
