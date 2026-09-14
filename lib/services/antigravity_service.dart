@@ -12,6 +12,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/chat_message.dart';
 import '../models/process_log_entry.dart';
+import '../ui/genui/confirmation_card_item.dart';
+import '../ui/genui/feedback_rating_card_item.dart';
 import '../ui/genui/multiple_choice_question_item.dart';
 import 'secure_key_store.dart';
 
@@ -190,7 +192,11 @@ class AntigravityService extends ChangeNotifier {
   static Catalog _buildCatalog() {
     final base = BasicCatalogItems.asCatalog();
     return base.copyWith(
-      newItems: [multipleChoiceQuestionItem],
+      newItems: [
+        multipleChoiceQuestionItem,
+        confirmationCardItem,
+        feedbackRatingCardItem,
+      ],
       systemPromptFragments: [
         ...base.systemPromptFragments,
         '''
@@ -200,6 +206,22 @@ When asking the user a multiple-choice question, clarifying requirements, or off
 - `allowMultiple`: (optional bool) Set to true if the user can select multiple options (checkboxes). Defaults to false (single-choice radio buttons).
 - `submitLabel`: (optional string) Custom text for the submit button. Defaults to "Submit Answer".
 - IMPORTANT: Do NOT include an "Other" option in the `options` array. The `MultipleChoiceQuestion` component automatically provides an "Other (write your own answer)" choice with a text input field.
+''',
+        '''
+When asking the user to approve, confirm, or reject an action or tool call (such as deleting files, executing dangerous shell commands, or triggering external deployments), use the `ConfirmationCard` component:
+- `title`: Short title of the action requiring confirmation.
+- `description`: Explanation of what will happen.
+- `details`: (optional string) Code snippet, command, file path, or technical payload.
+- `confirmLabel`: (optional string) Label for confirm button (defaults to "Approve").
+- `cancelLabel`: (optional string) Label for cancel button (defaults to "Reject").
+- `isDestructive`: (optional bool) Set to true if this action deletes data or is risky (highlights confirm button red).
+''',
+        '''
+When asking the user for a rating, satisfaction score, or review of a response or task result, use the `FeedbackRatingCard` component:
+- `prompt`: The question or prompt asking for feedback (e.g. "How satisfied are you with this response?").
+- `maxRating`: (optional integer) Maximum star rating, between 3 and 10 (defaults to 5).
+- `allowFeedbackText`: (optional bool) Whether to show a text area for written comments (defaults to true).
+- `submitLabel`: (optional string) Label for the submit button (defaults to "Submit Feedback").
 ''',
       ],
     );
@@ -281,6 +303,33 @@ When asking the user a multiple-choice question, clarifying requirements, or off
                   formattedParts.add('My answer is: $answer');
                   continue;
                 }
+              } else if (action['name'] == 'confirmation_response') {
+                final ctx = action['context'] as Map<String, dynamic>?;
+                final title = ctx?['title'] as String? ?? 'Action';
+                final actionName =
+                    (ctx?['action'] as String?) ??
+                    (ctx?['confirmed'] == true ? 'Approved' : 'Rejected');
+                final details = ctx?['details'] as String?;
+                final detailSuffix = details != null && details.isNotEmpty
+                    ? ' ($details)'
+                    : '';
+                formattedParts.add(
+                  'Confirmation for "$title": $actionName$detailSuffix',
+                );
+                continue;
+              } else if (action['name'] == 'feedback_submitted') {
+                final ctx = action['context'] as Map<String, dynamic>?;
+                final prompt = ctx?['prompt'] as String? ?? 'Feedback';
+                final rating = ctx?['rating'];
+                final maxRating = ctx?['maxRating'] ?? 5;
+                final comment = ctx?['comment'] as String?;
+                final commentSuffix = comment != null && comment.isNotEmpty
+                    ? ' - "$comment"'
+                    : '';
+                formattedParts.add(
+                  'Feedback for "$prompt": $rating/$maxRating stars$commentSuffix',
+                );
+                continue;
               }
             }
           } catch (_) {}

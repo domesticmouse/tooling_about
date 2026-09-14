@@ -512,17 +512,24 @@ class _ChatScreenState extends State<ChatScreen>
                     ),
                   ),
                   ActionChip(
-                    avatar: const Icon(Icons.widgets_outlined, size: 16),
-                    label: const Text('Interactive form (GenUI)'),
-                    onPressed: () => _sendMessage(
-                      'Create an interactive user feedback form with a text field and submit button using GenUI',
-                    ),
-                  ),
-                  ActionChip(
                     avatar: const Icon(Icons.code, size: 16),
                     label: const Text('Write a Flutter widget'),
                     onPressed: () =>
                         _sendMessage('Write an animated Flutter button widget'),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.check_circle_outlined, size: 16),
+                    label: const Text('Confirmation card (GenUI)'),
+                    onPressed: () => _sendMessage(
+                      'Ask me to confirm running a database migration using the ConfirmationCard GenUI component',
+                    ),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.star_outline_rounded, size: 16),
+                    label: const Text('Feedback rating (GenUI)'),
+                    onPressed: () => _sendMessage(
+                      'Ask for my feedback on your assistance using the FeedbackRatingCard GenUI component',
+                    ),
                   ),
                   ActionChip(
                     avatar: const Icon(Icons.science, size: 16),
