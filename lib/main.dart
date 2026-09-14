@@ -3,10 +3,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'services/antigravity_service.dart';
 import 'ui/chat_screen.dart';
+import 'utils/desktop_window_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
+  await DesktopWindowConfig.initialize();
   runApp(AntigravityChatApp(prefs: prefs));
 }
 
