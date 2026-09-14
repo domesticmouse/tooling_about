@@ -1,5 +1,7 @@
 # tooling_about
 
+![Screenshot of tooling_about](imgs/Screenshot.png)
+
 A desktop Flutter client demonstrating Google **Antigravity** agent orchestration paired with **Generative UI** (`genui`) dynamic surfaces and real-time subprocess tracing.
 
 ---
