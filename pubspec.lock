@@ -13,10 +13,10 @@ packages:
     dependency: "direct main"
     description:
       name: antigravity
-      sha256: fee869b4175f4b98364579af9a31fc2fec0b514fd65920d67fcd93ca70bcc381
+      sha256: f92416a2baa74d3b855757c18159b4588d243fdd5e51397db44d21dc3d6ed4ca
       url: "https://pub.dev"
     source: hosted
-    version: "0.13.0"
+    version: "0.15.0"
   args:
     dependency: transitive
     description:
@@ -476,10 +476,10 @@ packages:
     dependency: transitive
     description:
       name: meta
-      sha256: c82594181e3312f3d0695fc95aaaf7758d75b8d4ae2bbecf223b9fd5109a059d
+      sha256: "307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9"
       url: "https://pub.dev"
     source: hosted
-    version: "1.18.3"
+    version: "1.19.0"
   mime:
     dependency: transitive
     description:
